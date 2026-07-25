@@ -116,7 +116,7 @@ async function uploadFile(file, type) {
         fillEl.style.width = '100%';
         fillEl.style.background = 'var(--danger)';
         statusEl.textContent = `Error: ${error.message}`;
-        showToast('Error al procesar archivo', 'error');
+        showToast(`Error: ${error.message}`, 'error');
     }
     
     setTimeout(() => {
