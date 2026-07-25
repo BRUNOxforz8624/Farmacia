@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FarmApp - Comparador de Precios</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <nav class="sidebar">
+            <div class="logo">
+                <h2>Farm<span>App</span></h2>
+            </div>
+            <ul class="nav-menu">
+                <li class="nav-item active" data-page="dashboard">
+                    <span class="icon">&#9632;</span>
+                    Dashboard
+                </li>
+                <li class="nav-item" data-page="upload">
+                    <span class="icon">&#8682;</span>
+                    Cargar Datos
+                </li>
+                <li class="nav-item" data-page="products">
+                    <span class="icon">&#9783;</span>
+                    Productos
+                </li>
+                <li class="nav-item" data-page="compare">
+                    <span class="icon">&#8644;</span>
+                    Comparar Precios
+                </li>
+            </ul>
+        </nav>
+
+        <main class="main-content">
+            <!-- Dashboard -->
+            <section id="dashboard" class="page active">
+                <h1>Dashboard</h1>
+                
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-value" id="total-products">0</div>
+                        <div class="stat-label">Productos</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value" id="total-suppliers">0</div>
+                        <div class="stat-label">Proveedores</div>
+                    </div>
+                    <div class="stat-card success">
+                        <div class="stat-value" id="valid-offers">0</div>
+                        <div class="stat-label">Ofertas Validas</div>
+                    </div>
+                    <div class="stat-card warning">
+                        <div class="stat-value" id="invalid-offers">0</div>
+                        <div class="stat-label">Rechazadas</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Mejores Ofertas</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table class="table" id="best-deals-table">
+                                <thead>
+                                    <tr>
+                                        <th>Codigo</th>
+                                        <th>Descripcion</th>
+                                        <th>Marca/Proveedor</th>
+                                        <th>Precio</th>
+                                        <th>Cantidad</th>
+                                        <th>Vence</th>
+                                        <th>Condicion</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Upload -->
+            <section id="upload" class="page">
+                <h1>Cargar Datos</h1>
+                
+                <div class="upload-grid">
+                    <div class="card upload-card">
+                        <div class="card-header"><h3>PDF</h3></div>
+                        <div class="card-body">
+                            <div class="upload-zone" id="pdf-drop-zone">
+                                <span class="upload-icon">PDF</span>
+                                <p>Arrastra un archivo PDF aqui</p>
+                                <p class="small">o haz click para seleccionar</p>
+                                <input type="file" id="pdf-input" accept=".pdf" hidden>
+                            </div>
+                            <div class="upload-progress" id="pdf-progress" style="display:none">
+                                <div class="progress-bar"><div class="progress-fill" id="pdf-progress-fill"></div></div>
+                                <span id="pdf-status">Procesando...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card upload-card">
+                        <div class="card-header"><h3>Excel</h3></div>
+                        <div class="card-body">
+                            <div class="upload-zone" id="excel-drop-zone">
+                                <span class="upload-icon">XLS</span>
+                                <p>Arrastra un archivo Excel aqui</p>
+                                <p class="small">o haz click para seleccionar</p>
+                                <input type="file" id="excel-input" accept=".xlsx,.xls" hidden>
+                            </div>
+                            <div class="upload-progress" id="excel-progress" style="display:none">
+                                <div class="progress-bar"><div class="progress-fill" id="excel-progress-fill"></div></div>
+                                <span id="excel-status">Procesando...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card upload-card">
+                        <div class="card-header"><h3>Web</h3></div>
+                        <div class="card-body">
+                            <div class="web-form">
+                                <input type="url" id="web-url" class="input" placeholder="https://ejemplo.com/medicamentos">
+                                <button class="btn btn-primary" id="scrape-btn">Scrapear</button>
+                            </div>
+                            <div class="upload-progress" id="web-progress" style="display:none">
+                                <div class="progress-bar"><div class="progress-fill" id="web-progress-fill"></div></div>
+                                <span id="web-status">Scrapeando...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header"><h3>Historial de Cargas</h3></div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table class="table" id="upload-history-table">
+                                <thead>
+                                    <tr>
+                                        <th>Archivo</th>
+                                        <th>Tipo</th>
+                                        <th>Estado</th>
+                                        <th>Registros</th>
+                                        <th>Fecha</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Products -->
+            <section id="products" class="page">
+                <h1>Productos</h1>
+                
+                <div class="toolbar">
+                    <input type="text" id="product-search" class="input" placeholder="Buscar producto o codigo de barras...">
+                </div>
+
+                <div class="card">
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table class="table" id="products-table">
+                                <thead>
+                                    <tr>
+                                        <th>Codigo</th>
+                                        <th>Descripcion</th>
+                                        <th>Precio Min</th>
+                                        <th>Proveedor</th>
+                                        <th>Stock</th>
+                                        <th>Vence</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Compare -->
+            <section id="compare" class="page">
+                <h1>Comparar Precios</h1>
+                
+                <div class="filters-card card">
+                    <div class="card-header"><h3>Filtros Avanzados</h3></div>
+                    <div class="card-body">
+                        <div class="filters-grid">
+                            <div class="filter-group">
+                                <label>Producto</label>
+                                <input type="text" id="compare-search" class="input" placeholder="Nombre o codigo...">
+                            </div>
+                            <div class="filter-group">
+                                <label>Proveedor</label>
+                                <select id="filter-supplier" class="input">
+                                    <option value="">Todos</option>
+                                </select>
+                            </div>
+                            <div class="filter-group">
+                                <label>Precio Minimo</label>
+                                <input type="number" id="min-price" class="input" placeholder="0" min="0" step="0.01">
+                            </div>
+                            <div class="filter-group">
+                                <label>Precio Maximo</label>
+                                <input type="number" id="max-price" class="input" placeholder="Sin limite" min="0" step="0.01">
+                            </div>
+                            <div class="filter-group">
+                                <label>Cantidad Minima</label>
+                                <input type="number" id="min-qty" class="input" value="5" min="0">
+                            </div>
+                            <div class="filter-group">
+                                <label>Meses de Vida Min</label>
+                                <input type="number" id="min-months" class="input" value="6" min="0">
+                            </div>
+                            <div class="filter-group">
+                                <label>Ordenar por</label>
+                                <select id="sort-by" class="input">
+                                    <option value="price_asc">Precio: Menor a Mayor</option>
+                                    <option value="price_desc">Precio: Mayor a Menor</option>
+                                    <option value="quantity_desc">Cantidad: Mayor a Menor</option>
+                                    <option value="expiration_desc">Vencimiento: Mas lejano</option>
+                                </select>
+                            </div>
+                            <div class="filter-group filter-actions">
+                                <button class="btn btn-primary" id="apply-filters">Buscar</button>
+                                <button class="btn btn-secondary" id="clear-filters">Limpiar</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Resultados</h3>
+                        <span class="badge" id="results-count">0</span>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table class="table" id="compare-table">
+                                <thead>
+                                    <tr>
+                                        <th>Codigo</th>
+                                        <th>Descripcion</th>
+                                        <th>Marca/Proveedor</th>
+                                        <th>Precio</th>
+                                        <th>Cantidad</th>
+                                        <th>Vence en</th>
+                                        <th>Condicion</th>
+                                        <th>Estado</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="js/app.js"></script>
+    <script src="js/upload.js"></script>
+    <script src="js/compare.js"></script>
+</body>
+</html>

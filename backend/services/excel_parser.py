@@ -1,0 +1,200 @@
+import openpyxl
+from datetime import datetime
+from typing import List, Dict, Optional
+import re
+
+COLUMN_CONFIG = {
+    'barcode': {
+        'exact': ['cód. barra', 'cod barra', 'codigo de barras', 'cod barras', 'código de barras'],
+        'contains': ['barras', 'barcode', 'ean']
+    },
+    'name': {
+        'exact': ['descripción', 'descripcion', 'description', 'detalle'],
+        'contains': ['descripcion', 'descripción', 'description', 'detalle', 'producto']
+    },
+    'expiration': {
+        'exact': ['fecha venc.', 'fecha vencimiento', 'fec lote', 'fecha lote', 'vencimiento', 'fec. venc.'],
+        'contains': ['venc', 'fec lote', 'lote']
+    },
+    'quantity': {
+        'exact': ['existencia', 'inventario', 'cantidad solicitada', 'pedido', 'stock', 'disponible'],
+        'contains': ['existencia', 'inventario', 'cantidad', 'pedido', 'stock']
+    },
+    'price': {
+        'exact': ['precio (referencial)', 'precio promo (referencial)', 'precio uni', 'precio unit', 'precio unitario', 'precio externo ($) referencial', 'precio'],
+        'contains': ['precio']
+    },
+    'supplier': {
+        'exact': ['proveedor', 'laboratorio', 'lab', 'fabricante'],
+        'contains': ['proveedor', 'laboratorio', 'lab', 'fabricante']
+    },
+    'conditions': {
+        'exact': ['condición', 'condicion', 'acuerdo comercial', 'dcto. nena', 'dcto. ct', 'dcto. en factura', 'oferta', 'descuento'],
+        'contains': ['condicion', 'condición', 'acuerdo', 'dcto', 'descuento', 'oferta']
+    }
+}
+
+def parse_excel(file_path: str) -> List[Dict]:
+    products = []
+    try:
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        for sheet_name in wb.sheetnames:
+            sheet = wb[sheet_name]
+            sheet_products = process_sheet(sheet)
+            products.extend(sheet_products)
+        wb.close()
+    except Exception as e:
+        raise Exception(f"Error leyendo Excel: {str(e)}")
+    return products
+
+def process_sheet(sheet) -> List[Dict]:
+    products = []
+    col_map = {}
+    data_start = 0
+    
+    for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
+        if row_idx >= 30:
+            break
+        if not row or all(cell is None for cell in row):
+            continue
+        
+        headers = [str(h).strip() if h else '' for h in row]
+        col_map = map_columns(headers)
+        
+        if col_map and len(col_map) >= 3:
+            data_start = row_idx + 1
+            break
+    
+    if not col_map:
+        return products
+    
+    for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
+        if row_idx < data_start:
+            continue
+        if not row or all(cell is None for cell in row):
+            continue
+        
+        product = extract_product_data(row, col_map)
+        if product:
+            products.append(product)
+    
+    return products
+
+def map_columns(headers: List[str]) -> Dict[str, int]:
+    col_map = {}
+    headers_lower = [h.lower().strip() for h in headers]
+    
+    for field, config in COLUMN_CONFIG.items():
+        for i, header in enumerate(headers_lower):
+            if header in config['exact']:
+                col_map[field] = i
+                break
+    
+    for field, config in COLUMN_CONFIG.items():
+        if field in col_map:
+            continue
+        for i, header in enumerate(headers_lower):
+            if not header:
+                continue
+            for keyword in config['contains']:
+                if keyword in header:
+                    col_map[field] = i
+                    break
+            if field in col_map:
+                break
+    
+    return col_map
+
+def extract_product_data(row: tuple, col_map: Dict) -> Optional[Dict]:
+    try:
+        barcode = get_cell(row, col_map, 'barcode')
+        name = get_cell(row, col_map, 'name')
+        expiration = parse_date(get_cell(row, col_map, 'expiration'))
+        quantity = parse_integer(get_cell(row, col_map, 'quantity'))
+        price = parse_price(get_cell(row, col_map, 'price'))
+        supplier = get_cell(row, col_map, 'supplier')
+        conditions = get_cell(row, col_map, 'conditions')
+        
+        if not name or price is None:
+            return None
+        
+        return {
+            'barcode': barcode,
+            'name': name,
+            'expiration_date': expiration,
+            'quantity': quantity or 0,
+            'price': price,
+            'supplier': supplier,
+            'special_conditions': conditions
+        }
+    except Exception:
+        return None
+
+def get_cell(row: tuple, col_map: Dict, field: str) -> Optional[str]:
+    if field in col_map and col_map[field] < len(row):
+        value = row[col_map[field]]
+        return clean_text(value)
+    return None
+
+def clean_text(text) -> str:
+    if text is None:
+        return ''
+    if isinstance(text, (int, float)):
+        return str(text)
+    text = str(text).strip()
+    text = re.sub(r'\s+', ' ', text)
+    return text
+
+def parse_price(value) -> Optional[float]:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    try:
+        text = str(value).strip()
+        text = text.replace('$', '').replace(' ', '')
+        if ',' in text and '.' in text:
+            text = text.replace('.', '').replace(',', '.')
+        elif ',' in text:
+            text = text.replace(',', '.')
+        text = re.sub(r'[^\d.]', '', text)
+        if text:
+            return float(text)
+    except:
+        pass
+    return None
+
+def parse_integer(value) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, int):
+        return value
+    try:
+        text = str(value).strip()
+        text = re.sub(r'[^\d-]', '', text)
+        if text:
+            return int(float(text))
+    except:
+        pass
+    return None
+
+def parse_date(value) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if hasattr(value, 'date'):
+        return value.date()
+    
+    date_formats = [
+        '%d/%m/%Y', '%d-%m-%Y', '%Y-%m-%d', '%Y/%m/%d',
+        '%d/%m/%y', '%d-%m-%y', '%m/%d/%Y', '%m-%d-%Y',
+        '%d.%m.%Y', '%d.%m.%y', '%Y%m%d', '%m/%Y', '%m-%Y'
+    ]
+    text = str(value).strip()
+    for fmt in date_formats:
+        try:
+            return datetime.strptime(text, fmt).date()
+        except:
+            continue
+    return None
