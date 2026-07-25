@@ -13,7 +13,11 @@ def create_app():
     CORS(app)
     db.init_app(app)
     
-    os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
+    # Crear carpetas necesarias
+    uploads_dir = app.config['UPLOAD_FOLDER']
+    db_dir = os.path.join(BASE_DIR, 'database')
+    os.makedirs(uploads_dir, exist_ok=True)
+    os.makedirs(db_dir, exist_ok=True)
     
     from routes.upload import upload_bp
     from routes.products import products_bp

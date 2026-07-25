@@ -109,7 +109,7 @@ async function uploadFile(file, type) {
             showToast(data.message, 'success');
             loadUploadHistory();
         } else {
-            throw new Error(data.error);
+            throw new Error(data.error || 'Error desconocido');
         }
         
     } catch (error) {

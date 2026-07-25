@@ -79,6 +79,7 @@ def upload_excel():
     # Guardar archivo
     filename = secure_filename(file.filename)
     filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     file.save(filepath)
     
     # Crear registro de upload
