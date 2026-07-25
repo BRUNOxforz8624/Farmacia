@@ -84,28 +84,37 @@ def upload_excel():
     db.session.flush()
     
     try:
-        products = parse_excel(filepath)
+        imported = 0
+        rows_found = 0
+        first_row = None
         
-        imported = save_products(products, upload.id)
+        for product in parse_excel(filepath):
+            rows_found += 1
+            if first_row is None:
+                first_row = product
+            if save_single_product(product, upload.id):
+                imported += 1
+        
+        db.session.commit()
         
         upload.status = 'completed'
         upload.records_imported = imported
         db.session.commit()
         
         msg = f'Se importaron {imported} productos'
-        if imported == 0 and len(products) == 0:
+        if imported == 0 and rows_found == 0:
             msg = 'No se detectaron columnas en el archivo. Revisa que tenga columnas como: Descripcion, Precio, Proveedor'
-        elif imported == 0 and len(products) > 0:
-            msg = f'Se encontraron {len(products)} filas pero ninguna pudo guardarse'
+        elif imported == 0 and rows_found > 0:
+            msg = f'Se encontraron {rows_found} filas pero ninguna pudo guardarse'
         
         return jsonify({
             'message': msg,
             'upload_id': upload.id,
             'records': imported,
             'debug': {
-                'rows_found': len(products),
+                'rows_found': rows_found,
                 'rows_imported': imported,
-                'first_row': products[0] if products else None
+                'first_row': first_row
             }
         })
         
@@ -164,56 +173,57 @@ def save_products(products: list, upload_id: int) -> int:
     count = 0
     
     for idx, prod in enumerate(products):
-        if not prod.get('name') or not prod.get('price'):
-            continue
-        
-        try:
-            supplier = None
-            if prod.get('supplier'):
-                supplier = Supplier.query.filter_by(name=prod['supplier']).first()
-                if not supplier:
-                    supplier = Supplier(name=prod['supplier'])
-                    db.session.add(supplier)
-                    db.session.flush()
-            else:
-                supplier = Supplier.query.filter_by(name='Desconocido').first()
-                if not supplier:
-                    supplier = Supplier(name='Desconocido')
-                    db.session.add(supplier)
-                    db.session.flush()
-            
-            barcode = prod.get('barcode')
-            product = None
-            if barcode:
-                product = Product.query.filter_by(barcode=barcode).first()
-            if not product:
-                product = Product.query.filter_by(name=prod['name']).first()
-            if not product:
-                product = Product(
-                    barcode=barcode,
-                    name=prod['name']
-                )
-                db.session.add(product)
-                db.session.flush()
-            
-            price = Price(
-                product_id=product.id,
-                supplier_id=supplier.id,
-                price=prod['price'],
-                quantity=prod.get('quantity', 0),
-                expiration_date=prod.get('expiration_date'),
-                special_conditions=prod.get('special_conditions'),
-                upload_id=upload_id
-            )
-            db.session.add(price)
+        if save_single_product(prod, upload_id):
             count += 1
-            
-            if count % 100 == 0:
-                db.session.flush()
-                
-        except Exception as e:
-            print(f"[SAVE ERROR] Producto {idx}: {prod.get('name')} - {str(e)}")
-            continue
     
     db.session.flush()
     return count
+
+def save_single_product(prod: dict, upload_id: int) -> bool:
+    if not prod.get('name') or not prod.get('price'):
+        return False
+    
+    try:
+        supplier = None
+        if prod.get('supplier'):
+            supplier = Supplier.query.filter_by(name=prod['supplier']).first()
+            if not supplier:
+                supplier = Supplier(name=prod['supplier'])
+                db.session.add(supplier)
+                db.session.flush()
+        else:
+            supplier = Supplier.query.filter_by(name='Desconocido').first()
+            if not supplier:
+                supplier = Supplier(name='Desconocido')
+                db.session.add(supplier)
+                db.session.flush()
+        
+        barcode = prod.get('barcode')
+        product = None
+        if barcode:
+            product = Product.query.filter_by(barcode=barcode).first()
+        if not product:
+            product = Product.query.filter_by(name=prod['name']).first()
+        if not product:
+            product = Product(
+                barcode=barcode,
+                name=prod['name']
+            )
+            db.session.add(product)
+            db.session.flush()
+        
+        price = Price(
+            product_id=product.id,
+            supplier_id=supplier.id,
+            price=prod['price'],
+            quantity=prod.get('quantity', 0),
+            expiration_date=prod.get('expiration_date'),
+            special_conditions=prod.get('special_conditions'),
+            upload_id=upload_id
+        )
+        db.session.add(price)
+        return True
+        
+    except Exception as e:
+        print(f"[SAVE ERROR] {prod.get('name')} - {str(e)}")
+        return False

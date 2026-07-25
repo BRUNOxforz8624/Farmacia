@@ -1,6 +1,6 @@
 import openpyxl
 from datetime import datetime
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Generator
 import re
 
 COLUMN_CONFIG = {
@@ -42,20 +42,17 @@ def normalize(text: str) -> str:
     text = text.replace('.', '')
     return text.strip()
 
-def parse_excel(file_path: str) -> List[Dict]:
-    products = []
+def parse_excel(file_path: str) -> Generator[Dict, None, None]:
     try:
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
-            sheet_products = process_sheet(sheet)
-            products.extend(sheet_products)
+            yield from process_sheet(sheet)
         wb.close()
     except Exception as e:
         raise Exception(f"Error leyendo Excel: {str(e)}")
-    return products
 
-def process_sheet(sheet) -> List[Dict]:
+def process_sheet(sheet) -> Generator[Dict, None, None]:
     col_map = {}
     data_start = 0
     
@@ -80,9 +77,8 @@ def process_sheet(sheet) -> List[Dict]:
                 break
     
     if not col_map:
-        return []
+        return
     
-    products = []
     for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
         if row_idx < data_start:
             continue
@@ -91,9 +87,7 @@ def process_sheet(sheet) -> List[Dict]:
         
         product = extract_product_data(row, col_map)
         if product:
-            products.append(product)
-    
-    return products
+            yield product
 
 def map_columns(headers: List[str]) -> Dict[str, int]:
     col_map = {}
