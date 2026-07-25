@@ -4,17 +4,17 @@ from config import Config
 from models import db
 import os
 
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
 def create_app():
-    app = Flask(__name__, static_folder='../frontend', static_url_path='')
+    app = Flask(__name__, static_folder=os.path.join(BASE_DIR, 'frontend'), static_url_path='')
     app.config.from_object(Config)
     
     CORS(app)
     db.init_app(app)
     
-    # Crear uploads folder
     os.makedirs(app.config['UPLOAD_FOLDER'], exist_ok=True)
     
-    # Registrar blueprints
     from routes.upload import upload_bp
     from routes.products import products_bp
     from routes.compare import compare_bp
@@ -23,16 +23,14 @@ def create_app():
     app.register_blueprint(products_bp, url_prefix='/api/products')
     app.register_blueprint(compare_bp, url_prefix='/api/compare')
     
-    # Servir frontend
     @app.route('/')
     def index():
-        return send_from_directory('../frontend', 'index.html')
+        return send_from_directory(os.path.join(BASE_DIR, 'frontend'), 'index.html')
     
     @app.route('/<path:path>')
     def serve_static(path):
-        return send_from_directory('../frontend', path)
+        return send_from_directory(os.path.join(BASE_DIR, 'frontend'), path)
     
-    # Crear tablas
     with app.app_context():
         db.create_all()
     
