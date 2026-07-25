@@ -12,7 +12,6 @@ upload_bp = Blueprint('upload', __name__)
 
 @upload_bp.route('/pdf', methods=['POST'])
 def upload_pdf():
-    """Subir y procesar un archivo PDF"""
     if 'file' not in request.files:
         return jsonify({'error': 'No se envio archivo'}), 400
     
@@ -24,12 +23,11 @@ def upload_pdf():
     if not file.filename.lower().endswith('.pdf'):
         return jsonify({'error': 'Archivo debe ser PDF'}), 400
     
-    # Guardar archivo
     filename = secure_filename(file.filename)
     filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     file.save(filepath)
     
-    # Crear registro de upload
     upload = Upload(
         filename=filename,
         file_type='pdf',
@@ -39,10 +37,7 @@ def upload_pdf():
     db.session.flush()
     
     try:
-        # Parsear PDF
         products = parse_pdf(filepath)
-        
-        # Guardar en base de datos
         imported = save_products(products, upload.id)
         
         upload.status = 'completed'
@@ -64,7 +59,6 @@ def upload_pdf():
 
 @upload_bp.route('/excel', methods=['POST'])
 def upload_excel():
-    """Subir y procesar un archivo Excel"""
     if 'file' not in request.files:
         return jsonify({'error': 'No se envio archivo'}), 400
     
@@ -76,13 +70,11 @@ def upload_excel():
     if not file.filename.lower().endswith(('.xlsx', '.xls')):
         return jsonify({'error': 'Archivo debe ser Excel (.xlsx o .xls)'}), 400
     
-    # Guardar archivo
     filename = secure_filename(file.filename)
     filepath = os.path.join(current_app.config['UPLOAD_FOLDER'], filename)
     os.makedirs(os.path.dirname(filepath), exist_ok=True)
     file.save(filepath)
     
-    # Crear registro de upload
     upload = Upload(
         filename=filename,
         file_type='excel',
@@ -92,45 +84,41 @@ def upload_excel():
     db.session.flush()
     
     try:
-        # Parsear Excel
         products = parse_excel(filepath)
         
-        print(f"[EXCEL] Archivo: {filename}")
-        print(f"[EXCEL] Productos extraidos: {len(products)}")
-        
-        if products:
-            print(f"[EXCEL] Primer producto: {products[0]}")
-            if len(products) > 1:
-                print(f"[EXCEL] Segundo producto: {products[1]}")
-        
-        # Guardar en base de datos
         imported = save_products(products, upload.id)
-        
-        print(f"[EXCEL] Importados a BD: {imported}")
         
         upload.status = 'completed'
         upload.records_imported = imported
         db.session.commit()
         
+        msg = f'Se importaron {imported} productos'
+        if imported == 0 and len(products) == 0:
+            msg = 'No se detectaron columnas en el archivo. Revisa que tenga columnas como: Descripcion, Precio, Proveedor'
+        elif imported == 0 and len(products) > 0:
+            msg = f'Se encontraron {len(products)} filas pero ninguna pudo guardarse'
+        
         return jsonify({
-            'message': f'Se importaron {imported} productos',
+            'message': msg,
             'upload_id': upload.id,
-            'records': imported
+            'records': imported,
+            'debug': {
+                'rows_found': len(products),
+                'rows_imported': imported,
+                'first_row': products[0] if products else None
+            }
         })
         
     except Exception as e:
         tb = traceback.format_exc()
-        print(f"[EXCEL ERROR] {str(e)}")
-        print(f"[EXCEL ERROR] {tb}")
         upload.status = 'error'
         upload.error_message = str(e)
         db.session.commit()
         
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': str(e), 'traceback': tb}), 500
 
 @upload_bp.route('/web', methods=['POST'])
 def scrape_web():
-    """Scrapear una pagina web"""
     data = request.get_json()
     
     if not data or 'url' not in data:
@@ -138,7 +126,6 @@ def scrape_web():
     
     url = data['url']
     
-    # Crear registro de upload
     upload = Upload(
         filename=url,
         file_type='web',
@@ -148,10 +135,7 @@ def scrape_web():
     db.session.flush()
     
     try:
-        # Scrapear URL
         products = scrape_url(url)
-        
-        # Guardar en base de datos
         imported = save_products(products, upload.id)
         
         upload.status = 'completed'
@@ -173,12 +157,10 @@ def scrape_web():
 
 @upload_bp.route('/history', methods=['GET'])
 def upload_history():
-    """Obtener historial de cargas"""
     uploads = Upload.query.order_by(Upload.created_at.desc()).all()
     return jsonify([u.to_dict() for u in uploads])
 
 def save_products(products: list, upload_id: int) -> int:
-    """Guarda productos extraidos en la base de datos"""
     count = 0
     
     for idx, prod in enumerate(products):
@@ -186,7 +168,6 @@ def save_products(products: list, upload_id: int) -> int:
             continue
         
         try:
-            # Buscar o crear proveedor
             supplier = None
             if prod.get('supplier'):
                 supplier = Supplier.query.filter_by(name=prod['supplier']).first()
@@ -201,7 +182,6 @@ def save_products(products: list, upload_id: int) -> int:
                     db.session.add(supplier)
                     db.session.flush()
             
-            # Buscar o crear producto
             barcode = prod.get('barcode')
             product = None
             if barcode:
@@ -216,7 +196,6 @@ def save_products(products: list, upload_id: int) -> int:
                 db.session.add(product)
                 db.session.flush()
             
-            # Crear registro de precio
             price = Price(
                 product_id=product.id,
                 supplier_id=supplier.id,

@@ -105,11 +105,15 @@ async function uploadFile(file, type) {
         
         if (res.ok) {
             fillEl.style.width = '100%';
-            statusEl.textContent = `Completado: ${data.records} registros`;
+            statusEl.textContent = data.message;
             showToast(data.message, 'success');
+            if (data.debug && data.records === 0) {
+                console.log('[Upload Debug]', data.debug);
+            }
             loadUploadHistory();
         } else {
-            throw new Error(data.error || 'Error desconocido');
+            const detail = data.debug ? `\nFilas: ${data.debug.rows_found}, Guardadas: ${data.debug.rows_imported}` : '';
+            throw new Error((data.error || 'Error del servidor') + detail);
         }
         
     } catch (error) {
