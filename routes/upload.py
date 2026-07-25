@@ -99,6 +99,8 @@ def upload_excel():
         
         if products:
             print(f"[EXCEL] Primer producto: {products[0]}")
+            if len(products) > 1:
+                print(f"[EXCEL] Segundo producto: {products[1]}")
         
         # Guardar en base de datos
         imported = save_products(products, upload.id)

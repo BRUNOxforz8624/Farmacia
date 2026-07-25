@@ -5,15 +5,15 @@ import re
 
 COLUMN_CONFIG = {
     'barcode': {
-        'exact': ['cód. barra', 'cod barra', 'codigo de barras', 'cod barras', 'código de barras'],
-        'contains': ['barras', 'barcode', 'ean']
+        'exact': ['cod. barra', 'cod barra', 'codigo de barras', 'cod barras', 'código de barras', 'cod barras'],
+        'contains': ['barras', 'barcode', 'ean', 'cod barra']
     },
     'name': {
         'exact': ['descripción', 'descripcion', 'description', 'detalle'],
         'contains': ['descripcion', 'descripción', 'description', 'detalle', 'producto']
     },
     'expiration': {
-        'exact': ['fecha venc.', 'fecha vencimiento', 'fec lote', 'fecha lote', 'vencimiento', 'fec. venc.'],
+        'exact': ['fecha venc.', 'fecha vencimiento', 'fec lote', 'fecha lote', 'vencimiento', 'fec. venc.', 'fec venc'],
         'contains': ['venc', 'fec lote', 'lote']
     },
     'quantity': {
@@ -21,7 +21,7 @@ COLUMN_CONFIG = {
         'contains': ['existencia', 'inventario', 'cantidad', 'pedido', 'stock']
     },
     'price': {
-        'exact': ['precio (referencial)', 'precio promo (referencial)', 'precio uni', 'precio unit', 'precio unitario', 'precio externo ($) referencial', 'precio'],
+        'exact': ['precio', 'precio unit', 'precio unitario', 'precio (referencial)', 'precio externo', 'precio uni'],
         'contains': ['precio']
     },
     'supplier': {
@@ -29,10 +29,18 @@ COLUMN_CONFIG = {
         'contains': ['proveedor', 'laboratorio', 'lab', 'fabricante']
     },
     'conditions': {
-        'exact': ['condición', 'condicion', 'acuerdo comercial', 'dcto. nena', 'dcto. ct', 'dcto. en factura', 'oferta', 'descuento'],
+        'exact': ['condición', 'condicion', 'acuerdo comercial', 'dcto. nena', 'dcto. ct', 'dcto. en factura', 'oferta', 'descuento', 'dcto nena'],
         'contains': ['condicion', 'condición', 'acuerdo', 'dcto', 'descuento', 'oferta']
     }
 }
+
+def normalize(text: str) -> str:
+    text = text.lower().strip()
+    text = re.sub(r'[\s]+', ' ', text)
+    text = text.replace('(', '').replace(')', '').replace('$', '')
+    text = text.replace('á', 'a').replace('é', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u')
+    text = text.replace('.', '')
+    return text.strip()
 
 def parse_excel(file_path: str) -> List[Dict]:
     products = []
@@ -82,27 +90,38 @@ def process_sheet(sheet) -> List[Dict]:
 
 def map_columns(headers: List[str]) -> Dict[str, int]:
     col_map = {}
-    headers_lower = [h.lower().strip() for h in headers]
+    headers_norm = [normalize(h) for h in headers]
+    
+    print(f"[EXCEL DEBUG] Headers originales: {headers}")
+    print(f"[EXCEL DEBUG] Headers normalizados: {headers_norm}")
     
     for field, config in COLUMN_CONFIG.items():
-        for i, header in enumerate(headers_lower):
-            if header in config['exact']:
-                col_map[field] = i
+        for keyword in config['exact']:
+            kw_norm = normalize(keyword)
+            for i, h in enumerate(headers_norm):
+                if h == kw_norm:
+                    col_map[field] = i
+                    print(f"[EXCEL DEBUG] Columna '{field}' = col {i} ('{headers[i]}')")
+                    break
+            if field in col_map:
                 break
     
     for field, config in COLUMN_CONFIG.items():
         if field in col_map:
             continue
-        for i, header in enumerate(headers_lower):
-            if not header:
-                continue
-            for keyword in config['contains']:
-                if keyword in header:
+        for keyword in config['contains']:
+            kw_norm = normalize(keyword)
+            for i, h in enumerate(headers_norm):
+                if not h:
+                    continue
+                if kw_norm in h:
                     col_map[field] = i
+                    print(f"[EXCEL DEBUG] Columna '{field}' = col {i} ('{headers[i]}' via contains)")
                     break
             if field in col_map:
                 break
     
+    print(f"[EXCEL DEBUG] Columnas mapeadas: {col_map}")
     return col_map
 
 def extract_product_data(row: tuple, col_map: Dict) -> Optional[Dict]:
