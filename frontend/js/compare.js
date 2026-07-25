@@ -117,6 +117,24 @@ if (minPrice) minPrice.addEventListener('change', applyClientFilters);
 if (maxPrice) maxPrice.addEventListener('change', applyClientFilters);
 if (sortBy) sortBy.addEventListener('change', applyClientFilters);
 
+const exportBtn = document.getElementById('export-btn');
+if (exportBtn) {
+    exportBtn.addEventListener('click', exportResults);
+}
+
+function exportResults() {
+    const search = compareSearch?.value.trim() || '';
+    const qty = minQty?.value || 5;
+    const months = minMonths?.value || 6;
+    
+    let url = `/api/compare/export?min_qty=${qty}&min_months=${months}`;
+    if (search) {
+        url += `&q=${encodeURIComponent(search)}`;
+    }
+    
+    window.location.href = url;
+}
+
 function displayResults(results) {
     const tbody = document.querySelector('#compare-table tbody');
     const countBadge = document.getElementById('results-count');
