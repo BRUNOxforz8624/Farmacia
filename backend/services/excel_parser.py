@@ -5,7 +5,7 @@ import re
 
 COLUMN_CONFIG = {
     'barcode': {
-        'exact': ['cod. barra', 'cod barra', 'codigo de barras', 'cod barras', 'código de barras', 'cod barras'],
+        'exact': ['cod. barra', 'cod barra', 'codigo de barras', 'cod barras', 'código de barras'],
         'contains': ['barras', 'barcode', 'ean', 'cod barra']
     },
     'name': {
@@ -14,19 +14,19 @@ COLUMN_CONFIG = {
     },
     'expiration': {
         'exact': ['fecha venc.', 'fecha vencimiento', 'fec lote', 'fecha lote', 'vencimiento', 'fec. venc.', 'fec venc'],
-        'contains': ['venc', 'fec lote', 'lote']
+        'contains': ['vencimiento']
     },
     'quantity': {
         'exact': ['existencia', 'inventario', 'cantidad solicitada', 'pedido', 'stock', 'disponible'],
-        'contains': ['existencia', 'inventario', 'cantidad', 'pedido', 'stock']
+        'contains': ['existencia', 'inventario', 'stock']
     },
     'price': {
-        'exact': ['precio', 'precio unit', 'precio unitario', 'precio (referencial)', 'precio externo', 'precio uni'],
+        'exact': ['precio', 'precio unit', 'precio unitario', 'precio uni'],
         'contains': ['precio']
     },
     'supplier': {
         'exact': ['proveedor', 'laboratorio', 'lab', 'fabricante'],
-        'contains': ['proveedor', 'laboratorio', 'lab', 'fabricante']
+        'contains': ['proveedor', 'laboratorio', 'fabricante']
     },
     'conditions': {
         'exact': ['condición', 'condicion', 'acuerdo comercial', 'dcto. nena', 'dcto. ct', 'dcto. en factura', 'oferta', 'descuento', 'dcto nena'],
@@ -56,26 +56,33 @@ def parse_excel(file_path: str) -> List[Dict]:
     return products
 
 def process_sheet(sheet) -> List[Dict]:
-    products = []
     col_map = {}
     data_start = 0
     
     for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
-        if row_idx >= 30:
+        if row_idx >= 50:
             break
         if not row or all(cell is None for cell in row):
             continue
         
-        headers = [str(h).strip() if h else '' for h in row]
-        col_map = map_columns(headers)
+        non_empty = [h for h in row if h]
+        if len(non_empty) < 3:
+            continue
         
-        if col_map and len(col_map) >= 3:
-            data_start = row_idx + 1
-            break
+        headers = [str(h).strip() if h else '' for h in row]
+        candidate_map = map_columns(headers)
+        
+        if candidate_map and len(candidate_map) >= 3:
+            unique_cols = set(candidate_map.values())
+            if len(unique_cols) >= 3:
+                col_map = candidate_map
+                data_start = row_idx + 1
+                break
     
     if not col_map:
-        return products
+        return []
     
+    products = []
     for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
         if row_idx < data_start:
             continue
@@ -112,7 +119,7 @@ def map_columns(headers: List[str]) -> Dict[str, int]:
         for keyword in config['contains']:
             kw_norm = normalize(keyword)
             for i, h in enumerate(headers_norm):
-                if not h:
+                if not h or len(h) < 3:
                     continue
                 if kw_norm in h:
                     col_map[field] = i
