@@ -27,8 +27,12 @@ const COLUMN_CONFIG = {
         exact: ['existencia', 'inventario', 'cantidad solicitada', 'pedido', 'stock', 'disponible'],
         contains: ['existencia', 'inventario', 'stock']
     },
+    promo_price: {
+        exact: ['precio promo (referencial)', 'precio promo', 'precio promocional', 'promo'],
+        contains: ['precio promo']
+    },
     price: {
-        exact: ['precio (referencial)', 'precio promo (referencial)', 'precio uni', 'precio unit', 'precio unitario', 'precio externo ($) referencial', 'precio'],
+        exact: ['precio (referencial)', 'precio uni', 'precio unit', 'precio unitario', 'precio externo ($) referencial', 'precio'],
         contains: ['precio']
     },
     supplier: {
@@ -326,7 +330,9 @@ function extractProductData(row, colMap) {
         const name = getCell(row, colMap, 'name');
         const expiration = parseDate(getCell(row, colMap, 'expiration'));
         const quantity = parseInteger(getCell(row, colMap, 'quantity'));
-        const price = parsePrice(getCell(row, colMap, 'price'));
+        const promoPrice = parsePrice(getCell(row, colMap, 'promo_price'));
+        const regularPrice = parsePrice(getCell(row, colMap, 'price'));
+        const price = promoPrice !== null ? promoPrice : regularPrice;
         const supplier = getCell(row, colMap, 'supplier');
         const conditions = getCell(row, colMap, 'conditions');
 
@@ -625,7 +631,7 @@ function loadDashboard() {
                 <td>${escapeHtml(deal.barcode || '-')}</td>
                 <td>${escapeHtml(deal.product_name)}</td>
                 <td>${escapeHtml(deal.supplier_name)}</td>
-                <td><strong>$${deal.price.toFixed(2)}</strong></td>
+                <td><strong>Bs ${deal.price.toFixed(2)}</strong></td>
                 <td>${deal.quantity}</td>
                 <td>${deal.months_until_expiration ? deal.months_until_expiration + ' meses' : 'N/A'}</td>
                 <td>${escapeHtml(deal.special_conditions || '-')}</td>
@@ -662,7 +668,7 @@ function loadProducts(search) {
 
         if (productPrices.length > 0) {
             const cheapest = productPrices.reduce((min, p) => p.price < min.price ? p : min, productPrices[0]);
-            minPrice = '$' + cheapest.price.toFixed(2);
+            minPrice = 'Bs ' + cheapest.price.toFixed(2);
             const sup = suppliers.find(s => s.id === cheapest.supplier_id);
             supplier = sup ? sup.name : '-';
             qty = cheapest.quantity;
@@ -915,7 +921,7 @@ function displayResults(results) {
                 <td>${escapeHtml(item.barcode || '-')}</td>
                 <td>${escapeHtml(item.product_name)}</td>
                 <td>${escapeHtml(item.supplier_name)}</td>
-                <td><strong>$${item.price.toFixed(2)}</strong></td>
+                <td><strong>Bs ${item.price.toFixed(2)}</strong></td>
                 <td>${item.quantity} uds</td>
                 <td>${expiryText}</td>
                 <td>${escapeHtml(item.special_conditions || '-')}</td>
