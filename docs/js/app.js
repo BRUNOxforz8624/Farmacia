@@ -842,6 +842,7 @@ function initCompareHandlers() {
     document.getElementById('sort-by').addEventListener('change', applyClientFilters);
     document.getElementById('export-btn').addEventListener('click', exportResults);
     document.getElementById('orders-btn').addEventListener('click', downloadOrders);
+    document.getElementById('farmadeleite-btn').addEventListener('click', generateFarmadeleiteOrder);
 }
 
 function clearFilters() {
@@ -1024,6 +1025,163 @@ function downloadOrders() {
     XLSX.utils.book_append_sheet(wb, summaryWs, 'Resumen');
 
     XLSX.writeFile(wb, 'ordenes_compra_' + Date.now() + '.xlsx');
+}
+
+// ----- ORDEN FARMADELEITE -----
+
+const FARMADELEITE = [
+    { name: "Ketoprofeno amp. IV.", qty: 6, terms: ["ketoprofeno"] },
+    { name: "Lagrioftol gotas", qty: 6, terms: ["lagrioftol"] },
+    { name: "Artrovit x30 tab.", qty: 6, terms: ["artrovit"] },
+    { name: "3crema", qty: 6, terms: ["3crema"] },
+    { name: "Klafenac 100mg", qty: 6, terms: ["klafenac"] },
+    { name: "Diapaglix 10mg", qty: 6, terms: ["diapaglix"] },
+    { name: "Cilostazol 50mg", qty: 6, terms: ["cilostazol"] },
+    { name: "Carbatil 6,25mg", qty: 6, terms: ["carbatil"] },
+    { name: "Metformina 1000mg", qty: 12, terms: ["metformina"] },
+    { name: "Xerograx x30 tab.", qty: 12, terms: ["xerograx"] },
+    { name: "Xerograx x60 tab.", qty: 12, terms: ["xerograx", "x60"] },
+    { name: "Mascarilla ojos Zoah", qty: 12, terms: ["zoah"] },
+    { name: "Escitalopram 10mg x30 tab. Rowe", qty: 12, terms: ["escitalopram", "rowe"] },
+    { name: "Escitalopram 10mg x28 tab. Calox", qty: 12, terms: ["escitalopram", "calox"] },
+    { name: "Solucion 0,9% 100ml", qty: 12, terms: ["solucion", "0,9"] },
+    { name: "Ferganic 40mg", qty: 12, terms: ["ferganic"] },
+    { name: "Desler M 10 tab. Adulto", qty: 12, terms: ["desler"] },
+    { name: "Atrevia 25mg x20 tab.", qty: 12, terms: ["atrevia"] },
+    { name: "Olmesartan 40mg/Htc 12,5mg x30 tab. Genven", qty: 12, terms: ["olmesartan", "genven"] },
+    { name: "Plidan Compuesto", qty: 3, terms: ["plidan"] },
+    { name: "Dermazol crema", qty: 3, terms: ["dermazol"] },
+    { name: "Dropil 100mg", qty: 3, terms: ["dropil"] },
+    { name: "Breinox 800mg", qty: 3, terms: ["breinox"] },
+    { name: "Valeriana gotas", qty: 3, terms: ["valeriana"] },
+    { name: "Fitex 20mg x2 tab.", qty: 12, terms: ["fitex"] },
+    { name: "Crisomet 50/850 x30", qty: 3, terms: ["crisomet"] },
+    { name: "Espironolactona 25mg MEYER", qty: 3, terms: ["espironolactona"] },
+    { name: "Notalac 30mg", qty: 3, terms: ["notalac"] },
+    { name: "Omeprazol 40mg x10 Genven", qty: 3, terms: ["omeprazol", "genven"] },
+    { name: "Artrodar", qty: 12, terms: ["artrodar"] },
+    { name: "Canfir 750mg", qty: 3, terms: ["canfir"] },
+    { name: "Lubrix 120cc", qty: 3, terms: ["lubrix"] },
+    { name: "Letisan Jarabe", qty: 12, terms: ["letisan"] },
+    { name: "Aceite de coco", qty: 3, terms: ["aceite", "coco"] },
+    { name: "Pedialyte coco", qty: 12, terms: ["pedialyte"] },
+    { name: "Opat gotas", qty: 12, terms: ["opat"] },
+    { name: "Festal x50", qty: 12, terms: ["festal"] },
+    { name: "Festal x20", qty: 3, terms: ["festal", "x20"] },
+    { name: "Dicigel", qty: 3, terms: ["dicigel"] },
+    { name: "Lafarcaina", qty: 3, terms: ["lafarcaina"] },
+    { name: "Aflamax x20 tab.", qty: 3, terms: ["aflamax"] },
+    { name: "Protector solar Dernier Spray 200mL", qty: 3, terms: ["dernier"] },
+    { name: "Miovit x30 tab.", qty: 12, terms: ["miovit"] }
+];
+
+function searchFarmaProduct(terms) {
+    const allProducts = Store.getProducts();
+    const allPrices = Store.getPrices();
+    const allSuppliers = Store.getSuppliers();
+
+    let bestResult = null;
+    let bestScore = 0;
+    let bestPrice = Infinity;
+
+    for (const product of allProducts) {
+        const name = product.name.toLowerCase();
+        let score = 0;
+        for (const term of terms) {
+            if (name.includes(term.toLowerCase())) score++;
+        }
+        if (score === 0) continue;
+        if (score < bestScore) continue;
+
+        const productPrices = allPrices.filter(p => p.product_id === product.id);
+        for (const price of productPrices) {
+            if (!is_valid_offer(price)) continue;
+            if (score > bestScore || (score === bestScore && price.price < bestPrice)) {
+                bestScore = score;
+                bestPrice = price.price;
+                const supplier = allSuppliers.find(s => s.id === price.supplier_id);
+                bestResult = {
+                    product_id: product.id,
+                    barcode: product.barcode,
+                    product_name: product.name,
+                    price: price.price,
+                    quantity: price.quantity,
+                    supplier_name: supplier ? supplier.name : 'Desconocido',
+                    expiration_date: price.expiration_date,
+                    months_until_expiration: price.expiration_date ?
+                        Math.round((new Date(price.expiration_date) - new Date()) / (30 * 24 * 60 * 60 * 1000) * 10) / 10 : null,
+                    special_conditions: price.special_conditions
+                };
+            }
+        }
+    }
+
+    return bestResult;
+}
+
+function generateFarmadeleiteOrder() {
+    if (typeof XLSX === 'undefined') { showToast('SheetJS no disponible', 'error'); return; }
+
+    const found = [];
+    const notFound = [];
+
+    FARMADELEITE.forEach(req => {
+        const match = searchFarmaProduct(req.terms);
+        if (match) {
+            found.push({ ...req, match });
+        } else {
+            notFound.push(req);
+        }
+    });
+
+    const wb = XLSX.utils.book_new();
+
+    const orderData = [
+        ['ORDEN DE COMPRA - FARMADELEITE'],
+        ['Fecha: ' + new Date().toLocaleDateString()],
+        [],
+        ['#', 'Producto Requerido', 'Proveedor', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Subtotal', 'Estado']
+    ];
+
+    let total = 0;
+    let totalItems = 0;
+
+    found.forEach((item, i) => {
+        const subtotal = item.qty * item.match.price;
+        total += subtotal;
+        totalItems += item.qty;
+        orderData.push([
+            i + 1,
+            item.name,
+            item.match.supplier_name,
+            item.match.barcode || '-',
+            item.match.price,
+            item.qty,
+            subtotal,
+            item.match.special_conditions || '-'
+        ]);
+    });
+
+    notFound.forEach(item => {
+        orderData.push(['-', item.name, '-', '-', '-', item.qty, 0, 'NO ENCONTRADO']);
+    });
+
+    orderData.push([]);
+    orderData.push(['', '', '', '', 'TOTAL', totalItems, total]);
+
+    const orderWs = XLSX.utils.aoa_to_sheet(orderData);
+    orderWs['!cols'] = [
+        { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 18 },
+        { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 20 }
+    ];
+    XLSX.utils.book_append_sheet(wb, orderWs, 'Orden Farmadeleite');
+
+    XLSX.writeFile(wb, 'orden_farmadeleite_' + Date.now() + '.xlsx');
+
+    showToast(
+        `Encontrados: ${found.length} | No encontrados: ${notFound.length} | Total: Bs ${total.toFixed(2)}`,
+        found.length > 0 ? 'success' : 'error'
+    );
 }
 
 // ----- UTILS -----
