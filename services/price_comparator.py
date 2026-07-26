@@ -4,11 +4,6 @@ from models import db, Price, Product, Supplier
 from sqlalchemy import func
 
 def is_valid_offer(price_record: Price, min_qty: int = 5, min_months: int = 6) -> bool:
-    """
-    Valida si una oferta cumple los requisitos:
-    1. Mas de 5 unidades disponibles
-    2. Mas de 6 meses de vida util
-    """
     has_enough_stock = price_record.quantity > min_qty
     
     if price_record.expiration_date:
@@ -21,91 +16,95 @@ def is_valid_offer(price_record: Price, min_qty: int = 5, min_months: int = 6) -
     return has_enough_stock and has_enough_shelf_life
 
 def get_best_prices(min_qty: int = 5, min_months: int = 6) -> List[Dict]:
-    """
-    Obtiene los mejores precios para cada producto que cumpla los requisitos.
-    Retorna lista de productos con sus mejores ofertas.
-    """
-    # Subquery: precio minimo por producto que cumple filtros
-    subquery = db.session.query(
-        Price.product_id,
-        func.min(Price.price).label('min_price')
-    ).join(Product).filter(
-        Price.quantity > min_qty
-    )
-    
-    # Agregar filtro de fecha si aplica
-    if min_months > 0:
-        cutoff_date = date.today() + timedelta(days=min_months * 30)
-        subquery = subquery.filter(
-            (Price.expiration_date.is_(None)) | 
-            (Price.expiration_date > cutoff_date)
-        )
-    
-    subquery = subquery.group_by(Price.product_id).subquery()
-    
-    # Query principal: obtener ofertas con precio minimo
-    results = db.session.query(
+    # Filtrar precios que cumplan minimos de cantidad y fecha
+    query = db.session.query(
         Product,
         Supplier,
         Price
     ).join(
-        subquery,
-        (Price.product_id == subquery.c.product_id) & 
-        (Price.price == subquery.c.min_price)
-    ).join(
         Product, Price.product_id == Product.id
     ).join(
         Supplier, Price.supplier_id == Supplier.id
-    ).all()
+    ).filter(
+        Price.quantity > min_qty
+    )
+    
+    if min_months > 0:
+        cutoff_date = date.today() + timedelta(days=min_months * 30)
+        query = query.filter(
+            (Price.expiration_date.is_(None)) | 
+            (Price.expiration_date > cutoff_date)
+        )
+    
+    all_results = query.all()
+    
+    # Agrupar por barcode (si tiene) o por product_id
+    groups = {}
+    for product, supplier, price in all_results:
+        group_key = product.barcode if product.barcode else f'id_{product.id}'
+        
+        if group_key not in groups:
+            groups[group_key] = []
+        
+        months_left = None
+        if price.expiration_date:
+            months_left = (price.expiration_date - date.today()).days / 30
+        
+        groups[group_key].append({
+            'product_id': product.id,
+            'barcode': product.barcode,
+            'product_name': product.name,
+            'supplier_id': supplier.id,
+            'supplier_name': supplier.name,
+            'price': float(price.price),
+            'quantity': price.quantity,
+            'expiration_date': price.expiration_date.isoformat() if price.expiration_date else None,
+            'months_until_expiration': round(months_left, 1) if months_left else None,
+            'special_conditions': price.special_conditions,
+            'is_valid': is_valid_offer(price, min_qty, min_months)
+        })
     
     best_prices = []
-    seen_products = set()
+    for group_key, offers in groups.items():
+        # Ordenar ofertas por precio dentro de cada grupo
+        offers.sort(key=lambda x: x['price'])
+        # Tomar solo la mejor oferta (mas barata) de cada producto
+        best = offers[0]
+        best['total_offers'] = len(offers)
+        best_prices.append(best)
     
-    for product, supplier, price in results:
-        if product.id not in seen_products:
-            seen_products.add(product.id)
-            
-            months_left = None
-            if price.expiration_date:
-                months_left = (price.expiration_date - date.today()).days / 30
-            
-            best_prices.append({
-                'product_id': product.id,
-                'barcode': product.barcode,
-                'product_name': product.name,
-                'supplier_id': supplier.id,
-                'supplier_name': supplier.name,
-                'price': float(price.price),
-                'quantity': price.quantity,
-                'expiration_date': price.expiration_date.isoformat() if price.expiration_date else None,
-                'months_until_expiration': round(months_left, 1) if months_left else None,
-                'special_conditions': price.special_conditions,
-                'is_valid': is_valid_offer(price, min_qty, min_months)
-            })
-    
-    # Ordenar por precio
     best_prices.sort(key=lambda x: x['price'])
     
     return best_prices
 
-def compare_product(product_name: str, min_qty: int = 5, min_months: int = 6) -> List[Dict]:
-    """
-    Compara precios de un producto especifico entre todos los proveedores.
-    """
-    # Buscar producto por nombre o codigo de barras
+def compare_product(search_term: str, min_qty: int = 5, min_months: int = 6) -> List[Dict]:
     products = Product.query.filter(
         db.or_(
-            Product.name.ilike(f'%{product_name}%'),
-            Product.barcode.ilike(f'%{product_name}%')
+            Product.name.ilike(f'%{search_term}%'),
+            Product.barcode.ilike(f'%{search_term}%')
         )
     ).all()
     
     if not products:
         return []
     
+    # Buscar por barcode: si el search es un barcode, encontrar TODOS los productos con ese barcode
+    barcode_products = set()
+    for p in products:
+        if p.barcode:
+            same_barcode = Product.query.filter_by(barcode=p.barcode).all()
+            for sb in same_barcode:
+                barcode_products.add(sb.id)
+    
+    product_ids = set(p.id for p in products) | barcode_products
+    
     results = []
     
-    for product in products:
+    for pid in product_ids:
+        product = Product.query.get(pid)
+        if not product:
+            continue
+        
         prices = Price.query.filter_by(product_id=product.id).all()
         
         for price in prices:
@@ -129,18 +128,15 @@ def compare_product(product_name: str, min_qty: int = 5, min_months: int = 6) ->
                 'is_valid': is_valid_offer(price, min_qty, min_months)
             })
     
-    # Ordenar: primero validos, luego por precio
     results.sort(key=lambda x: (not x['is_valid'], x['price']))
     
     return results
 
 def get_statistics() -> Dict:
-    """Obtiene estadisticas generales"""
     total_products = Product.query.count()
     total_suppliers = Supplier.query.count()
     total_prices = Price.query.count()
     
-    # Precios validos
     valid_count = 0
     all_prices = Price.query.all()
     for p in all_prices:

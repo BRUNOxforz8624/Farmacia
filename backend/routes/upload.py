@@ -5,6 +5,7 @@ from services.pdf_parser import parse_pdf
 from services.excel_parser import parse_excel
 from services.web_scraper import scrape_url
 import os
+import gc
 import traceback
 from datetime import datetime
 
@@ -94,9 +95,14 @@ def upload_excel():
                 first_row = product
             if save_single_product(product, upload.id):
                 imported += 1
+            if rows_found % 500 == 0:
+                db.session.commit()
+                db.session.expire_all()
+                gc.collect()
         
         db.session.commit()
-        
+        db.session.expire_all()
+        gc.collect()
         upload.status = 'completed'
         upload.records_imported = imported
         db.session.commit()
