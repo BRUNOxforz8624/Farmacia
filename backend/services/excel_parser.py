@@ -2,6 +2,7 @@ import openpyxl
 from datetime import datetime
 from typing import List, Dict, Optional, Generator
 import re
+import gc
 
 COLUMN_CONFIG = {
     'barcode': {
@@ -45,56 +46,63 @@ def normalize(text: str) -> str:
 def parse_excel(file_path: str) -> Generator[Dict, None, None]:
     try:
         wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+        
         for sheet_name in wb.sheetnames:
             sheet = wb[sheet_name]
-            yield from process_sheet(sheet)
+            col_map = None
+            data_start = 0
+            
+            for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
+                if row_idx >= 50:
+                    break
+                if not row or all(cell is None for cell in row):
+                    continue
+                
+                non_empty = [h for h in row if h]
+                if len(non_empty) < 3:
+                    continue
+                
+                headers = [str(h).strip() if h else '' for h in row]
+                candidate_map = map_columns(headers)
+                
+                if candidate_map and len(candidate_map) >= 3:
+                    unique_cols = set(candidate_map.values())
+                    if len(unique_cols) >= 3:
+                        col_map = candidate_map
+                        data_start = row_idx + 1
+                        break
+            
+            if not col_map:
+                continue
+            
+            count = 0
+            for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
+                if row_idx < data_start:
+                    continue
+                if not row or all(cell is None for cell in row):
+                    continue
+                
+                product = extract_product_data(row, col_map)
+                if product:
+                    yield product
+                    count += 1
+                    if count % 500 == 0:
+                        gc.collect()
+            
+            del sheet
+            gc.collect()
+        
         wb.close()
+        
     except Exception as e:
         raise Exception(f"Error leyendo Excel: {str(e)}")
-
-def process_sheet(sheet) -> Generator[Dict, None, None]:
-    col_map = {}
-    data_start = 0
-    
-    for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
-        if row_idx >= 50:
-            break
-        if not row or all(cell is None for cell in row):
-            continue
-        
-        non_empty = [h for h in row if h]
-        if len(non_empty) < 3:
-            continue
-        
-        headers = [str(h).strip() if h else '' for h in row]
-        candidate_map = map_columns(headers)
-        
-        if candidate_map and len(candidate_map) >= 3:
-            unique_cols = set(candidate_map.values())
-            if len(unique_cols) >= 3:
-                col_map = candidate_map
-                data_start = row_idx + 1
-                break
-    
-    if not col_map:
-        return
-    
-    for row_idx, row in enumerate(sheet.iter_rows(values_only=True)):
-        if row_idx < data_start:
-            continue
-        if not row or all(cell is None for cell in row):
-            continue
-        
-        product = extract_product_data(row, col_map)
-        if product:
-            yield product
 
 def map_columns(headers: List[str]) -> Dict[str, int]:
     col_map = {}
     headers_norm = [normalize(h) for h in headers]
     
-    print(f"[EXCEL DEBUG] Headers originales: {headers}")
-    print(f"[EXCEL DEBUG] Headers normalizados: {headers_norm}")
+    print(f"[EXCEL DEBUG] Headers: {headers}")
+    print(f"[EXCEL DEBUG] Normalizados: {headers_norm}")
     
     for field, config in COLUMN_CONFIG.items():
         for keyword in config['exact']:
@@ -102,7 +110,7 @@ def map_columns(headers: List[str]) -> Dict[str, int]:
             for i, h in enumerate(headers_norm):
                 if h == kw_norm:
                     col_map[field] = i
-                    print(f"[EXCEL DEBUG] Columna '{field}' = col {i} ('{headers[i]}')")
+                    print(f"[EXCEL DEBUG] '{field}' = col {i} ('{headers[i]}')")
                     break
             if field in col_map:
                 break
@@ -117,12 +125,12 @@ def map_columns(headers: List[str]) -> Dict[str, int]:
                     continue
                 if kw_norm in h:
                     col_map[field] = i
-                    print(f"[EXCEL DEBUG] Columna '{field}' = col {i} ('{headers[i]}' via contains)")
+                    print(f"[EXCEL DEBUG] '{field}' = col {i} ('{headers[i]}' via contains)")
                     break
             if field in col_map:
                 break
     
-    print(f"[EXCEL DEBUG] Columnas mapeadas: {col_map}")
+    print(f"[EXCEL DEBUG] Mapeadas: {col_map}")
     return col_map
 
 def extract_product_data(row: tuple, col_map: Dict) -> Optional[Dict]:
