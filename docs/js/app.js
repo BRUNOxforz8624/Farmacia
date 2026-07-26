@@ -356,46 +356,58 @@ function getCell(row, colMap, field) {
 // ----- SAVE PRODUCTS -----
 
 function saveProducts(products, uploadId) {
-    let count = 0;
-    products.forEach(prod => {
-        if (saveSingleProduct(prod, uploadId)) count++;
+    const allProducts = Store.getProducts();
+    const allSuppliers = Store.getSuppliers();
+    const allPrices = Store.getPrices();
+
+    let supplierIdCounter = allSuppliers.length > 0 ? Math.max(...allSuppliers.map(s => s.id)) : 0;
+    let productIdCounter = allProducts.length > 0 ? Math.max(...allProducts.map(p => p.id)) : 0;
+    let priceIdCounter = allPrices.length > 0 ? Math.max(...allPrices.map(p => p.id)) : 0;
+
+    const supplierNameMap = {};
+    allSuppliers.forEach(s => { supplierNameMap[s.name] = s; });
+
+    const productNameMap = {};
+    const productBarcodeMap = {};
+    allProducts.forEach(p => {
+        productNameMap[p.name] = p;
+        if (p.barcode) productBarcodeMap[p.barcode] = p;
     });
-    return count;
-}
 
-function saveSingleProduct(prod, uploadId) {
-    if (!prod.name || prod.price === null) return false;
+    let count = 0;
 
-    try {
-        const products = Store.getProducts();
-        const suppliers = Store.getSuppliers();
-        const prices = Store.getPrices();
+    for (const prod of products) {
+        if (!prod.name || prod.price === null) continue;
 
         let supplier = null;
         if (prod.supplier) {
-            supplier = suppliers.find(s => s.name === prod.supplier);
+            supplier = supplierNameMap[prod.supplier];
         }
         if (!supplier) {
-            supplier = { id: Store.getNextId('suppliers'), name: prod.supplier || 'Desconocido' };
-            suppliers.push(supplier);
-            Store.setSuppliers(suppliers);
+            supplierIdCounter++;
+            supplier = { id: supplierIdCounter, name: prod.supplier || 'Desconocido' };
+            allSuppliers.push(supplier);
+            supplierNameMap[supplier.name] = supplier;
         }
 
         let product = null;
         if (prod.barcode) {
-            product = products.find(p => p.barcode === prod.barcode);
+            product = productBarcodeMap[prod.barcode];
         }
         if (!product) {
-            product = products.find(p => p.name === prod.name);
+            product = productNameMap[prod.name];
         }
         if (!product) {
-            product = { id: Store.getNextId('products'), barcode: prod.barcode, name: prod.name };
-            products.push(product);
-            Store.setProducts(products);
+            productIdCounter++;
+            product = { id: productIdCounter, barcode: prod.barcode, name: prod.name };
+            allProducts.push(product);
+            productNameMap[product.name] = product;
+            if (product.barcode) productBarcodeMap[product.barcode] = product;
         }
 
-        const price = {
-            id: Store.getNextId('prices'),
+        priceIdCounter++;
+        allPrices.push({
+            id: priceIdCounter,
             product_id: product.id,
             supplier_id: supplier.id,
             price: prod.price,
@@ -403,15 +415,15 @@ function saveSingleProduct(prod, uploadId) {
             expiration_date: prod.expiration_date,
             special_conditions: prod.special_conditions,
             upload_id: uploadId
-        };
-
-        prices.push(price);
-        Store.setPrices(prices);
-        return true;
-    } catch (e) {
-        console.error('[SAVE ERROR]', prod.name, e);
-        return false;
+        });
+        count++;
     }
+
+    Store.setProducts(allProducts);
+    Store.setSuppliers(allSuppliers);
+    Store.setPrices(allPrices);
+
+    return count;
 }
 
 // ----- PRICE COMPARATOR (portado de price_comparator.py) -----
