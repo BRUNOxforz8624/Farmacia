@@ -122,12 +122,30 @@ if (exportBtn) {
     exportBtn.addEventListener('click', exportResults);
 }
 
+const ordersBtn = document.getElementById('orders-btn');
+if (ordersBtn) {
+    ordersBtn.addEventListener('click', downloadOrders);
+}
+
 function exportResults() {
     const search = compareSearch?.value.trim() || '';
     const qty = minQty?.value || 5;
     const months = minMonths?.value || 6;
     
     let url = `/api/compare/export?min_qty=${qty}&min_months=${months}`;
+    if (search) {
+        url += `&q=${encodeURIComponent(search)}`;
+    }
+    
+    window.location.href = url;
+}
+
+function downloadOrders() {
+    const search = compareSearch?.value.trim() || '';
+    const qty = minQty?.value || 5;
+    const months = minMonths?.value || 6;
+    
+    let url = `/api/compare/purchase-orders?min_qty=${qty}&min_months=${months}`;
     if (search) {
         url += `&q=${encodeURIComponent(search)}`;
     }

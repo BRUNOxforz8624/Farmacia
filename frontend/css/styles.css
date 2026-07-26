@@ -278,6 +278,16 @@ h1 {
     box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
 }
 
+.btn-success {
+    background: #059669;
+    color: white;
+}
+
+.btn-success:hover {
+    background: #047857;
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.4);
+}
+
 .btn-secondary {
     background: var(--gray-100);
     color: var(--gray-700);
