@@ -4,3 +4,9 @@
 [build]
   base = "docs"
   publish = "."
+
+# Compatibilidad: las URLs viejas /docs/... redirigen a la raiz.
+[[redirects]]
+  from = "/docs/*"
+  to = "/:splat"
+  status = 301
