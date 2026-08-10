@@ -831,6 +831,7 @@ function loadUploadHistory() {
 // ----- COMPARE -----
 
 let allResults = [];
+let farmadeleiteMode = false;
 
 function initCompareHandlers() {
     document.getElementById('apply-filters').addEventListener('click', applyFilters);
@@ -843,6 +844,8 @@ function initCompareHandlers() {
     document.getElementById('export-btn').addEventListener('click', exportResults);
     document.getElementById('orders-btn').addEventListener('click', downloadOrders);
     document.getElementById('farmadeleite-btn').addEventListener('click', generateFarmadeleiteOrder);
+    const farmaFilter = document.getElementById('farmadeleite-filter');
+    if (farmaFilter) farmaFilter.addEventListener('change', applyFilters);
 }
 
 function clearFilters() {
@@ -853,6 +856,8 @@ function clearFilters() {
     document.getElementById('min-price').value = '';
     document.getElementById('max-price').value = '';
     document.getElementById('sort-by').value = 'price_asc';
+    const farmaFilter = document.getElementById('farmadeleite-filter');
+    if (farmaFilter) farmaFilter.checked = false;
     applyFilters();
 }
 
@@ -860,11 +865,18 @@ function applyFilters() {
     const search = document.getElementById('compare-search').value.trim();
     const qty = parseInt(document.getElementById('min-qty').value) || 5;
     const months = parseInt(document.getElementById('min-months').value) || 6;
+    const farmaFilter = document.getElementById('farmadeleite-filter');
 
-    if (search) {
-        allResults = compare_product(search, qty, months);
+    if (farmaFilter && farmaFilter.checked) {
+        farmadeleiteMode = true;
+        allResults = buildFarmadeleiteResults(months);
     } else {
-        allResults = get_best_prices(qty, months);
+        farmadeleiteMode = false;
+        if (search) {
+            allResults = compare_product(search, qty, months);
+        } else {
+            allResults = get_best_prices(qty, months);
+        }
     }
 
     const filterSupplier = document.getElementById('filter-supplier');
@@ -887,8 +899,13 @@ function applyClientFilters() {
     const sort = document.getElementById('sort-by').value;
 
     if (supplier) filtered = filtered.filter(r => r.supplier_name === supplier);
-    if (pMin !== null) filtered = filtered.filter(r => r.price >= pMin);
-    if (pMax !== null) filtered = filtered.filter(r => r.price <= pMax);
+    if (pMin !== null) filtered = filtered.filter(r => (r.price || 0) >= pMin);
+    if (pMax !== null) filtered = filtered.filter(r => (r.price || 0) <= pMax);
+
+    if (farmadeleiteMode) {
+        displayFarmadeleiteResults(filtered);
+        return;
+    }
 
     switch (sort) {
         case 'price_asc': filtered.sort((a, b) => a.price - b.price); break;
@@ -898,6 +915,65 @@ function applyClientFilters() {
     }
 
     displayResults(filtered);
+}
+
+function displayFarmadeleiteResults(results) {
+    const tbody = document.querySelector('#compare-table tbody');
+    const countBadge = document.getElementById('results-count');
+    countBadge.textContent = results.length;
+    tbody.innerHTML = '';
+
+    if (results.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--gray-400); padding:60px 20px"><div class="empty-state"><h3>No se encontraron resultados</h3><p>Intenta ajustar los filtros de busqueda</p></div></td></tr>';
+        return;
+    }
+
+    results.forEach(item => {
+        let statusClass, statusText, codeText, priceText, qtyText, supplierText, expiryText, condText;
+
+        if (item.reason === 'OK') {
+            statusClass = 'status-valid';
+            statusText = 'OK';
+            codeText = item.barcode || '-';
+            priceText = 'Bs ' + item.price.toFixed(2);
+            qtyText = item.quantity + ' uds (req ' + item.required_qty + ')';
+            supplierText = item.supplier_name;
+            expiryText = item.months_until_expiration !== null && item.months_until_expiration !== undefined
+                ? item.months_until_expiration + ' meses' : 'N/A';
+            condText = item.special_conditions || '-';
+        } else if (item.reason === 'INSUFFICIENT_STOCK') {
+            statusClass = 'status-warning';
+            statusText = 'Stock insuficiente';
+            codeText = item.barcode || '-';
+            priceText = item.price ? 'Bs ' + item.price.toFixed(2) : '-';
+            qtyText = (item.quantity || 0) + ' uds (req ' + item.required_qty + ')';
+            supplierText = item.supplier_name || '-';
+            expiryText = '-';
+            condText = '-';
+        } else {
+            statusClass = 'status-invalid';
+            statusText = 'No encontrado';
+            codeText = '-';
+            priceText = '-';
+            qtyText = '0 uds (req ' + item.required_qty + ')';
+            supplierText = '-';
+            expiryText = '-';
+            condText = '-';
+        }
+
+        tbody.innerHTML += `
+            <tr>
+                <td>${escapeHtml(codeText)}</td>
+                <td>${escapeHtml(item.name)}</td>
+                <td>${escapeHtml(supplierText)}</td>
+                <td><strong>${priceText}</strong></td>
+                <td>${qtyText}</td>
+                <td>${expiryText}</td>
+                <td>${escapeHtml(condText)}</td>
+                <td><span class="${statusClass}">${statusText}</span></td>
+            </tr>
+        `;
+    });
 }
 
 function displayResults(results) {
@@ -935,6 +1011,13 @@ function displayResults(results) {
 // ----- EXPORT -----
 
 function exportResults() {
+    const farmaFilter = document.getElementById('farmadeleite-filter');
+    if (farmaFilter && farmaFilter.checked) {
+        const months = parseInt(document.getElementById('min-months').value) || 6;
+        exportFarmadeleiteExcel(buildFarmadeleiteResults(months));
+        return;
+    }
+
     const search = document.getElementById('compare-search').value.trim();
     const qty = parseInt(document.getElementById('min-qty').value) || 5;
     const months = parseInt(document.getElementById('min-months').value) || 6;
@@ -969,19 +1052,92 @@ function exportResults() {
     XLSX.writeFile(wb, 'farmapp_resultados_' + Date.now() + '.xlsx');
 }
 
+function exportFarmadeleiteExcel(results) {
+    if (typeof XLSX === 'undefined') { showToast('SheetJS no disponible', 'error'); return; }
+
+    const wsData = [
+        ['FILTRO FARMADELEITE'],
+        ['Fecha: ' + new Date().toLocaleDateString()],
+        [],
+        ['#', 'Producto Requerido', 'Proveedor', 'Codigo', 'Precio', 'Cant. Requerida', 'Stock Disp.', 'Vencimiento', 'Condicion', 'Estado']
+    ];
+
+    results.forEach((item, i) => {
+        let estado, precio, stock, proveedor, vencimiento, condicion;
+
+        if (item.reason === 'OK') {
+            estado = 'OK';
+            precio = item.price;
+            stock = item.quantity;
+            proveedor = item.supplier_name;
+            vencimiento = item.months_until_expiration !== null && item.months_until_expiration !== undefined
+                ? item.months_until_expiration + ' meses' : 'N/A';
+            condicion = item.special_conditions || '-';
+        } else if (item.reason === 'INSUFFICIENT_STOCK') {
+            estado = 'STOCK INSUFICIENTE (tiene ' + (item.quantity || 0) + ' de ' + item.required_qty + ')';
+            precio = item.price || '-';
+            stock = item.quantity || 0;
+            proveedor = item.supplier_name || '-';
+            vencimiento = '-';
+            condicion = '-';
+        } else {
+            estado = 'NO ENCONTRADO';
+            precio = '-';
+            stock = 0;
+            proveedor = '-';
+            vencimiento = '-';
+            condicion = '-';
+        }
+
+        wsData.push([
+            i + 1,
+            item.name,
+            proveedor,
+            item.barcode || '-',
+            precio,
+            item.required_qty,
+            stock,
+            vencimiento,
+            condicion,
+            estado
+        ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(wsData);
+    ws['!cols'] = [
+        { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 18 },
+        { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 30 }
+    ];
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Filtro Farmadeleite');
+    XLSX.writeFile(wb, 'filtro_farmadeleite_' + Date.now() + '.xlsx');
+}
+
 function downloadOrders() {
+    const farmaFilter = document.getElementById('farmadeleite-filter');
+    if (farmaFilter && farmaFilter.checked) {
+        const months = parseInt(document.getElementById('min-months').value) || 6;
+        const results = buildFarmadeleiteResults(months).filter(r => r.reason === 'OK');
+        downloadOrdersExcel(results);
+        return;
+    }
+
     const search = document.getElementById('compare-search').value.trim();
     const qty = parseInt(document.getElementById('min-qty').value) || 5;
     const months = parseInt(document.getElementById('min-months').value) || 6;
 
     const results = search ? compare_product(search, qty, months) : get_best_prices(qty, months);
     const valid = results.filter(r => r.is_valid);
+    downloadOrdersExcel(valid);
+}
 
-    if (valid.length === 0) { showToast('No hay productos validos para generar ordenes', 'error'); return; }
+function downloadOrdersExcel(items) {
+    if (items.length === 0) { showToast('No hay productos validos para generar ordenes', 'error'); return; }
     if (typeof XLSX === 'undefined') { showToast('SheetJS no disponible', 'error'); return; }
 
     const bySupplier = {};
-    valid.forEach(item => {
+    items.forEach(item => {
         if (!bySupplier[item.supplier_name]) bySupplier[item.supplier_name] = [];
         bySupplier[item.supplier_name].push(item);
     });
@@ -991,7 +1147,7 @@ function downloadOrders() {
     let grandTotal = 0;
 
     Object.keys(bySupplier).sort().forEach(supplier => {
-        const items = bySupplier[supplier];
+        const supplierItems = bySupplier[supplier];
         const sheetData = [
             ['Orden de Compra - ' + supplier],
             ['Fecha: ' + new Date().toLocaleDateString()],
@@ -1000,10 +1156,11 @@ function downloadOrders() {
         ];
 
         let supplierTotal = 0;
-        items.forEach((item, i) => {
-            const sub = item.price * item.quantity;
+        supplierItems.forEach((item, i) => {
+            const qty = item.required_qty || item.quantity;
+            const sub = item.price * qty;
             supplierTotal += sub;
-            sheetData.push([i + 1, item.barcode || '-', item.product_name, item.price, item.quantity, sub, item.special_conditions || '-']);
+            sheetData.push([i + 1, item.barcode || '-', item.product_name || item.name, item.price, qty, sub, item.special_conditions || '-']);
         });
 
         sheetData.push([]);
@@ -1013,12 +1170,12 @@ function downloadOrders() {
         ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 40 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 25 }];
         XLSX.utils.book_append_sheet(wb, ws, supplier.substring(0, 31));
 
-        summaryData.push([supplier, items.length, supplierTotal]);
+        summaryData.push([supplier, supplierItems.length, supplierTotal]);
         grandTotal += supplierTotal;
     });
 
     summaryData.push([]);
-    summaryData.push(['TOTAL GENERAL', valid.length, grandTotal]);
+    summaryData.push(['TOTAL GENERAL', items.length, grandTotal]);
 
     const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
     summaryWs['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 15 }];
@@ -1027,7 +1184,7 @@ function downloadOrders() {
     XLSX.writeFile(wb, 'ordenes_compra_' + Date.now() + '.xlsx');
 }
 
-// ----- ORDEN FARMADELEITE -----
+// ----- FILTRO / ORDEN FARMADELEITE -----
 
 const FARMADELEITE = [
     { name: "Ketoprofeno amp. IV.", qty: 6, terms: ["ketoprofeno"] },
@@ -1038,13 +1195,13 @@ const FARMADELEITE = [
     { name: "Diapaglix 10mg", qty: 6, terms: ["diapaglix"] },
     { name: "Cilostazol 50mg", qty: 6, terms: ["cilostazol"] },
     { name: "Carbatil 6,25mg", qty: 6, terms: ["carbatil"] },
-    { name: "Metformina 1000mg", qty: 12, terms: ["metformina"] },
+    { name: "Metformina 1000mg spefar", qty: 12, terms: ["metformina"] },
     { name: "Xerograx x30 tab.", qty: 12, terms: ["xerograx"] },
     { name: "Xerograx x60 tab.", qty: 12, terms: ["xerograx", "x60"] },
     { name: "Mascarilla ojos Zoah", qty: 12, terms: ["zoah"] },
     { name: "Escitalopram 10mg x30 tab. Rowe", qty: 12, terms: ["escitalopram", "rowe"] },
     { name: "Escitalopram 10mg x28 tab. Calox", qty: 12, terms: ["escitalopram", "calox"] },
-    { name: "Solucion 0,9% 100ml", qty: 12, terms: ["solucion", "0,9"] },
+    { name: "Solucion 0,9% de 100ml", qty: 12, terms: ["solucion", "0,9"] },
     { name: "Ferganic 40mg", qty: 12, terms: ["ferganic"] },
     { name: "Desler M 10 tab. Adulto", qty: 12, terms: ["desler"] },
     { name: "Atrevia 25mg x20 tab.", qty: 12, terms: ["atrevia"] },
@@ -1071,67 +1228,106 @@ const FARMADELEITE = [
     { name: "Dicigel", qty: 3, terms: ["dicigel"] },
     { name: "Lafarcaina", qty: 3, terms: ["lafarcaina"] },
     { name: "Aflamax x20 tab.", qty: 3, terms: ["aflamax"] },
-    { name: "Protector solar Dernier Spray 200mL", qty: 3, terms: ["dernier"] },
+    { name: "Protector solar Dernier Spray 200mL coco", qty: 3, terms: ["dernier"] },
     { name: "Miovit x30 tab.", qty: 12, terms: ["miovit"] }
 ];
 
-function searchFarmaProduct(terms) {
+function normalizeFarmaTerm(text) {
+    return (text || '').toLowerCase().replace(/,/g, '.').replace(/\s+/g, ' ').trim();
+}
+
+function matchesTerms(name, terms) {
+    const normName = normalizeFarmaTerm(name);
+    return terms.every(t => normName.includes(normalizeFarmaTerm(t)));
+}
+
+// Busca un producto de la lista Farmadeleite entre TODOS los archivos cargados.
+// Filtra primero por nombre (deben coincidir TODOS los terminos) y luego valida
+// que el proveedor tenga stock >= a la cantidad requerida (3, 6 o 12 und).
+function findFarmaProduct(req, minMonths) {
     const allProducts = Store.getProducts();
     const allPrices = Store.getPrices();
     const allSuppliers = Store.getSuppliers();
 
-    let bestResult = null;
-    let bestScore = 0;
-    let bestPrice = Infinity;
+    const matching = allProducts.filter(p => matchesTerms(p.name, req.terms));
 
-    for (const product of allProducts) {
-        const name = product.name.toLowerCase();
-        let score = 0;
-        for (const term of terms) {
-            if (name.includes(term.toLowerCase())) score++;
-        }
-        if (score === 0) continue;
-        if (score < bestScore) continue;
+    if (matching.length === 0) {
+        return { reason: 'NOT_FOUND', required_qty: req.qty };
+    }
 
+    const today = new Date();
+    const cutoffDate = new Date(today.getTime() + minMonths * 30 * 24 * 60 * 60 * 1000);
+
+    let bestValid = null;
+    let bestStock = null;
+
+    for (const product of matching) {
         const productPrices = allPrices.filter(p => p.product_id === product.id);
         for (const price of productPrices) {
-            if (!is_valid_offer(price)) continue;
-            if (score > bestScore || (score === bestScore && price.price < bestPrice)) {
-                bestScore = score;
-                bestPrice = price.price;
-                const supplier = allSuppliers.find(s => s.id === price.supplier_id);
-                bestResult = {
-                    product_id: product.id,
-                    barcode: product.barcode,
-                    product_name: product.name,
-                    price: price.price,
-                    quantity: price.quantity,
-                    supplier_name: supplier ? supplier.name : 'Desconocido',
-                    expiration_date: price.expiration_date,
-                    months_until_expiration: price.expiration_date ?
-                        Math.round((new Date(price.expiration_date) - new Date()) / (30 * 24 * 60 * 60 * 1000) * 10) / 10 : null,
-                    special_conditions: price.special_conditions
-                };
+            const supplier = allSuppliers.find(s => s.id === price.supplier_id);
+            const monthsLeft = price.expiration_date
+                ? Math.round((new Date(price.expiration_date) - today) / (30 * 24 * 60 * 60 * 1000) * 10) / 10
+                : null;
+            const shelfOk = !price.expiration_date || new Date(price.expiration_date) > cutoffDate;
+
+            const offer = {
+                product_id: product.id,
+                barcode: product.barcode,
+                product_name: product.name,
+                supplier_name: supplier ? supplier.name : 'Desconocido',
+                price: price.price,
+                quantity: price.quantity,
+                months_until_expiration: monthsLeft,
+                special_conditions: price.special_conditions
+            };
+
+            if (!bestStock || price.quantity > bestStock.quantity) {
+                bestStock = Object.assign({}, offer);
+            }
+
+            if (price.quantity >= req.qty && shelfOk) {
+                if (!bestValid || price.price < bestValid.price) {
+                    bestValid = Object.assign({}, offer);
+                }
             }
         }
     }
 
-    return bestResult;
+    if (bestValid) {
+        return Object.assign({ reason: 'OK', required_qty: req.qty }, bestValid);
+    }
+    return Object.assign({ reason: 'INSUFFICIENT_STOCK', required_qty: req.qty }, bestStock || {});
+}
+
+function buildFarmadeleiteResults(minMonths) {
+    return FARMADELEITE.map(req => Object.assign({ name: req.name }, findFarmaProduct(req, minMonths)));
+}
+
+function searchFarmaProduct(terms) {
+    const result = findFarmaProduct({ terms: terms, qty: 0 }, 6);
+    if (result.reason === 'OK') {
+        const clean = Object.assign({}, result);
+        delete clean.reason;
+        delete clean.required_qty;
+        return clean;
+    }
+    return null;
 }
 
 function generateFarmadeleiteOrder() {
     if (typeof XLSX === 'undefined') { showToast('SheetJS no disponible', 'error'); return; }
 
+    const months = parseInt(document.getElementById('min-months').value) || 6;
+    const results = buildFarmadeleiteResults(months);
+
     const found = [];
+    const insufficient = [];
     const notFound = [];
 
-    FARMADELEITE.forEach(req => {
-        const match = searchFarmaProduct(req.terms);
-        if (match) {
-            found.push({ ...req, match });
-        } else {
-            notFound.push(req);
-        }
+    results.forEach(item => {
+        if (item.reason === 'OK') found.push(item);
+        else if (item.reason === 'INSUFFICIENT_STOCK') insufficient.push(item);
+        else notFound.push(item);
     });
 
     const wb = XLSX.utils.book_new();
@@ -1140,46 +1336,61 @@ function generateFarmadeleiteOrder() {
         ['ORDEN DE COMPRA - FARMADELEITE'],
         ['Fecha: ' + new Date().toLocaleDateString()],
         [],
-        ['#', 'Producto Requerido', 'Proveedor', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Subtotal', 'Estado']
+        ['#', 'Producto Requerido', 'Proveedor', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Stock Disp.', 'Subtotal', 'Estado']
     ];
 
     let total = 0;
     let totalItems = 0;
 
     found.forEach((item, i) => {
-        const subtotal = item.qty * item.match.price;
+        const subtotal = item.required_qty * item.price;
         total += subtotal;
-        totalItems += item.qty;
+        totalItems += item.required_qty;
         orderData.push([
             i + 1,
             item.name,
-            item.match.supplier_name,
-            item.match.barcode || '-',
-            item.match.price,
-            item.qty,
+            item.supplier_name,
+            item.barcode || '-',
+            item.price,
+            item.required_qty,
+            item.quantity,
             subtotal,
-            item.match.special_conditions || '-'
+            item.special_conditions || '-'
+        ]);
+    });
+
+    insufficient.forEach(item => {
+        orderData.push([
+            '-',
+            item.name,
+            item.supplier_name || '-',
+            item.barcode || '-',
+            item.price || '-',
+            item.required_qty,
+            item.quantity || 0,
+            0,
+            'STOCK INSUFICIENTE (tiene ' + (item.quantity || 0) + ' de ' + item.required_qty + ')'
         ]);
     });
 
     notFound.forEach(item => {
-        orderData.push(['-', item.name, '-', '-', '-', item.qty, 0, 'NO ENCONTRADO']);
+        orderData.push(['-', item.name, '-', '-', '-', item.required_qty, 0, 0, 'NO ENCONTRADO']);
     });
 
     orderData.push([]);
-    orderData.push(['', '', '', '', 'TOTAL', totalItems, total]);
+    orderData.push(['', '', '', '', 'TOTAL', totalItems, '', total]);
 
     const orderWs = XLSX.utils.aoa_to_sheet(orderData);
     orderWs['!cols'] = [
         { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 18 },
-        { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 20 }
+        { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 30 }
     ];
     XLSX.utils.book_append_sheet(wb, orderWs, 'Orden Farmadeleite');
 
     XLSX.writeFile(wb, 'orden_farmadeleite_' + Date.now() + '.xlsx');
 
     showToast(
-        `Encontrados: ${found.length} | No encontrados: ${notFound.length} | Total: Bs ${total.toFixed(2)}`,
+        `OK: ${found.length} | Stock insuf.: ${insufficient.length} | No enc.: ${notFound.length} | Total: Bs ${total.toFixed(2)}`,
         found.length > 0 ? 'success' : 'error'
     );
 }
