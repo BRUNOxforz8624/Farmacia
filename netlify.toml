@@ -1,6 +1,7 @@
 # Netlify: el sitio es estatico y vive en /docs.
 # Al fijar base en docs, Netlify NO detecta runtime.txt/requirements.txt
 # de la raiz (archivos del backend Flask/Render) y despliega solo la app.
+# Repo publico desde 2026-08-10 (quita limite de contribuidores en Netlify).
 [build]
   base = "docs"
   publish = "."
