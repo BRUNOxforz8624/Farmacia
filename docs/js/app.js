@@ -174,7 +174,11 @@ const Store = {
         catch (e) { return []; }
     },
     _set(key, data) {
-        localStorage.setItem('farmapp_' + key, JSON.stringify(data));
+        try {
+            localStorage.setItem('farmapp_' + key, JSON.stringify(data));
+        } catch (e) {
+            throw new Error('El almacenamiento del navegador esta lleno. Pulsa "Borrar Todos" o usa archivos mas pequenos.');
+        }
     },
     getProducts() { return this._get('products'); },
     setProducts(d) { this._set('products', d); },
@@ -432,6 +436,27 @@ function saveProducts(products, uploadId) {
     return count;
 }
 
+// ----- INDEXED DATA ACCESS (evita O(n^2) con archivos grandes) -----
+
+function buildIndexes() {
+    const allProducts = Store.getProducts();
+    const allSuppliers = Store.getSuppliers();
+    const allPrices = Store.getPrices();
+
+    const productById = new Map();
+    const supplierById = new Map();
+    const pricesByProduct = new Map();
+
+    for (const p of allProducts) productById.set(p.id, p);
+    for (const s of allSuppliers) supplierById.set(s.id, s);
+    for (const price of allPrices) {
+        if (!pricesByProduct.has(price.product_id)) pricesByProduct.set(price.product_id, []);
+        pricesByProduct.get(price.product_id).push(price);
+    }
+
+    return { allProducts, allSuppliers, allPrices, productById, supplierById, pricesByProduct };
+}
+
 // ----- PRICE COMPARATOR (portado de price_comparator.py) -----
 
 function is_valid_offer(priceRecord, minQty, minMonths) {
@@ -455,9 +480,7 @@ function get_best_prices(minQty, minMonths) {
     if (minQty === undefined) minQty = CONFIG.MIN_QUANTITY;
     if (minMonths === undefined) minMonths = CONFIG.MIN_MONTHS_SHELF_LIFE;
 
-    const allProducts = Store.getProducts();
-    const allSuppliers = Store.getSuppliers();
-    const allPrices = Store.getPrices();
+    const { allPrices, productById, supplierById } = buildIndexes();
 
     const today = new Date();
     const cutoffDate = new Date(today.getTime() + minMonths * 30 * 24 * 60 * 60 * 1000);
@@ -473,13 +496,13 @@ function get_best_prices(minQty, minMonths) {
 
     const groups = {};
     filtered.forEach(price => {
-        const product = allProducts.find(p => p.id === price.product_id);
+        const product = productById.get(price.product_id);
         if (!product) return;
 
         const groupKey = product.barcode || 'id_' + product.id;
         if (!groups[groupKey]) groups[groupKey] = [];
 
-        const supplier = allSuppliers.find(s => s.id === price.supplier_id);
+        const supplier = supplierById.get(price.supplier_id);
         const monthsLeft = price.expiration_date ?
             (new Date(price.expiration_date) - today) / (30 * 24 * 60 * 60 * 1000) : null;
 
@@ -514,9 +537,7 @@ function compare_product(searchTerm, minQty, minMonths) {
     if (minQty === undefined) minQty = CONFIG.MIN_QUANTITY;
     if (minMonths === undefined) minMonths = CONFIG.MIN_MONTHS_SHELF_LIFE;
 
-    const allProducts = Store.getProducts();
-    const allSuppliers = Store.getSuppliers();
-    const allPrices = Store.getPrices();
+    const { allProducts, productById, supplierById, pricesByProduct } = buildIndexes();
     const today = new Date();
     const term = searchTerm.toLowerCase();
 
@@ -526,23 +547,23 @@ function compare_product(searchTerm, minQty, minMonths) {
         return nameMatch || barcodeMatch;
     });
 
-    const barcodes = matchingProducts.map(p => p.barcode).filter(Boolean);
+    const barcodes = new Set(matchingProducts.map(p => p.barcode).filter(Boolean));
     const allProductIds = new Set(matchingProducts.map(p => p.id));
 
     allProducts.forEach(p => {
-        if (p.barcode && barcodes.includes(p.barcode)) {
+        if (p.barcode && barcodes.has(p.barcode)) {
             allProductIds.add(p.id);
         }
     });
 
     const results = [];
     allProductIds.forEach(productId => {
-        const product = allProducts.find(p => p.id === productId);
+        const product = productById.get(productId);
         if (!product) return;
 
-        const productPrices = allPrices.filter(p => p.product_id === productId);
+        const productPrices = pricesByProduct.get(productId) || [];
         productPrices.forEach(price => {
-            const supplier = allSuppliers.find(s => s.id === price.supplier_id);
+            const supplier = supplierById.get(price.supplier_id);
             const monthsLeft = price.expiration_date ?
                 (new Date(price.expiration_date) - today) / (30 * 24 * 60 * 60 * 1000) : null;
 
@@ -623,10 +644,10 @@ function loadDashboard() {
 
     const deals = get_best_prices();
     const tbody = document.querySelector('#best-deals-table tbody');
-    tbody.innerHTML = '';
+    const rows = [];
 
     deals.slice(0, 10).forEach(deal => {
-        tbody.innerHTML += `
+        rows.push(`
             <tr>
                 <td>${escapeHtml(deal.barcode || '-')}</td>
                 <td>${escapeHtml(deal.product_name)}</td>
@@ -636,57 +657,89 @@ function loadDashboard() {
                 <td>${deal.months_until_expiration ? deal.months_until_expiration + ' meses' : 'N/A'}</td>
                 <td>${escapeHtml(deal.special_conditions || '-')}</td>
             </tr>
-        `;
+        `);
     });
+    tbody.innerHTML = rows.join('');
 }
 
 // ----- PRODUCTS PAGE -----
 
-function loadProducts(search) {
-    const products = Store.getProducts();
-    const suppliers = Store.getSuppliers();
-    const prices = Store.getPrices();
+let productsPageLimit = 250;
 
-    let filtered = products;
+function loadProducts(search) {
+    const { allProducts, supplierById, pricesByProduct } = buildIndexes();
+
+    let filtered = allProducts;
     if (search) {
         const term = search.toLowerCase();
-        filtered = products.filter(p =>
+        filtered = allProducts.filter(p =>
             (p.name && p.name.toLowerCase().includes(term)) ||
             (p.barcode && p.barcode.toLowerCase().includes(term))
         );
     }
 
     const tbody = document.querySelector('#products-table tbody');
-    tbody.innerHTML = '';
+    const rows = [];
 
-    filtered.forEach(product => {
-        const productPrices = prices.filter(p => p.product_id === product.id);
+    for (let i = 0; i < filtered.length; i++) {
+        const product = filtered[i];
+        const productPrices = pricesByProduct.get(product.id) || [];
+
         let minPrice = '-';
         let supplier = '-';
         let qty = 0;
         let expiry = '-';
 
         if (productPrices.length > 0) {
-            const cheapest = productPrices.reduce((min, p) => p.price < min.price ? p : min, productPrices[0]);
+            let cheapest = productPrices[0];
+            for (let j = 1; j < productPrices.length; j++) {
+                if (productPrices[j].price < cheapest.price) cheapest = productPrices[j];
+            }
             minPrice = 'Bs ' + cheapest.price.toFixed(2);
-            const sup = suppliers.find(s => s.id === cheapest.supplier_id);
+            const sup = supplierById.get(cheapest.supplier_id);
             supplier = sup ? sup.name : '-';
             qty = cheapest.quantity;
             expiry = cheapest.expiration_date || '-';
         }
 
-        tbody.innerHTML += `
-            <tr>
-                <td>${escapeHtml(product.barcode || '-')}</td>
-                <td>${escapeHtml(product.name)}</td>
-                <td><strong>${minPrice}</strong></td>
-                <td>${escapeHtml(supplier)}</td>
-                <td>${qty}</td>
-                <td>${expiry}</td>
-                <td><button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.id})">Eliminar</button></td>
-            </tr>
-        `;
-    });
+        rows.push(`<tr>
+            <td>${escapeHtml(product.barcode || '-')}</td>
+            <td>${escapeHtml(product.name)}</td>
+            <td><strong>${minPrice}</strong></td>
+            <td>${escapeHtml(supplier)}</td>
+            <td>${qty}</td>
+            <td>${expiry}</td>
+            <td><button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.id})">Eliminar</button></td>
+        </tr>`);
+    }
+
+    tbody.innerHTML = rows.slice(0, productsPageLimit).join('');
+
+    const container = document.getElementById('products-load-more-container');
+    if (container) {
+        document.getElementById('products-shown-count').textContent =
+            'Mostrando ' + Math.min(rows.length, productsPageLimit) + ' de ' + filtered.length + ' productos';
+        document.getElementById('products-load-more').style.display =
+            filtered.length > productsPageLimit ? 'inline-block' : 'none';
+        container.style.display = 'flex';
+    }
+}
+
+function initProductsHandlers() {
+    const searchInput = document.getElementById('product-search');
+    if (searchInput) {
+        searchInput.addEventListener('keyup', () => {
+            productsPageLimit = 250;
+            loadProducts(searchInput.value.trim());
+        });
+    }
+    const loadMoreBtn = document.getElementById('products-load-more');
+    if (loadMoreBtn) {
+        loadMoreBtn.addEventListener('click', () => {
+            productsPageLimit += 250;
+            loadProducts(document.getElementById('product-search').value.trim());
+        });
+    }
 }
 
 function deleteProduct(id) {
@@ -806,7 +859,7 @@ async function uploadFile(file, type) {
 function loadUploadHistory() {
     const uploads = Store.getUploads();
     const tbody = document.querySelector('#upload-history-table tbody');
-    tbody.innerHTML = '';
+    const rows = [];
 
     uploads.forEach(upload => {
         const typeBadge = upload.file_type === 'pdf'
@@ -816,7 +869,7 @@ function loadUploadHistory() {
             ? '<span class="badge badge-success">Completado</span>'
             : '<span class="badge badge-danger">Error</span>';
 
-        tbody.innerHTML += `
+        rows.push(`
             <tr>
                 <td>${escapeHtml(upload.filename)}</td>
                 <td>${typeBadge}</td>
@@ -824,8 +877,9 @@ function loadUploadHistory() {
                 <td>${upload.records_imported}</td>
                 <td>${new Date(upload.created_at).toLocaleDateString()}</td>
             </tr>
-        `;
+        `);
     });
+    tbody.innerHTML = rows.join('');
 }
 
 // ----- COMPARE -----
@@ -928,6 +982,8 @@ function displayFarmadeleiteResults(results) {
         return;
     }
 
+    const rows = [];
+
     results.forEach(item => {
         let statusClass, statusText, codeText, priceText, qtyText, supplierText, expiryText, condText;
 
@@ -961,7 +1017,7 @@ function displayFarmadeleiteResults(results) {
             condText = '-';
         }
 
-        tbody.innerHTML += `
+        rows.push(`
             <tr>
                 <td>${escapeHtml(codeText)}</td>
                 <td>${escapeHtml(item.name)}</td>
@@ -972,8 +1028,10 @@ function displayFarmadeleiteResults(results) {
                 <td>${escapeHtml(condText)}</td>
                 <td><span class="${statusClass}">${statusText}</span></td>
             </tr>
-        `;
+        `);
     });
+
+    tbody.innerHTML = rows.join('');
 }
 
 function displayResults(results) {
@@ -987,13 +1045,18 @@ function displayResults(results) {
         return;
     }
 
-    results.forEach(item => {
+    const MAX_ROWS = 1000;
+    const shown = Math.min(results.length, MAX_ROWS);
+    const rows = [];
+
+    for (let i = 0; i < shown; i++) {
+        const item = results[i];
         const statusClass = item.is_valid ? 'status-valid' : 'status-invalid';
         const statusText = item.is_valid ? 'Valida' : 'Rechazada';
         let expiryText = 'N/A';
         if (item.months_until_expiration !== null) expiryText = item.months_until_expiration + ' meses';
 
-        tbody.innerHTML += `
+        rows.push(`
             <tr>
                 <td>${escapeHtml(item.barcode || '-')}</td>
                 <td>${escapeHtml(item.product_name)}</td>
@@ -1004,8 +1067,14 @@ function displayResults(results) {
                 <td>${escapeHtml(item.special_conditions || '-')}</td>
                 <td><span class="${statusClass}">${statusText}</span></td>
             </tr>
-        `;
-    });
+        `);
+    }
+
+    if (results.length > MAX_ROWS) {
+        rows.push(`<tr><td colspan="8" style="text-align:center; color:var(--gray-400); padding:20px">Mostrando ${MAX_ROWS} de ${results.length} resultados. Usa los filtros para reducir la lista.</td></tr>`);
+    }
+
+    tbody.innerHTML = rows.join('');
 }
 
 // ----- EXPORT -----
@@ -1236,20 +1305,24 @@ function normalizeFarmaTerm(text) {
     return (text || '').toLowerCase().replace(/,/g, '.').replace(/\s+/g, ' ').trim();
 }
 
-function matchesTerms(name, terms) {
-    const normName = normalizeFarmaTerm(name);
-    return terms.every(t => normName.includes(normalizeFarmaTerm(t)));
-}
-
 // Busca un producto de la lista Farmadeleite entre TODOS los archivos cargados.
-// Filtra primero por nombre (deben coincidir TODOS los terminos) y luego valida
-// que el proveedor tenga stock >= a la cantidad requerida (3, 6 o 12 und).
-function findFarmaProduct(req, minMonths) {
-    const allProducts = Store.getProducts();
-    const allPrices = Store.getPrices();
-    const allSuppliers = Store.getSuppliers();
+function findFarmaProduct(req, minMonths, ctx, normProducts) {
+    const { allProducts, supplierById, pricesByProduct } = ctx || buildIndexes();
 
-    const matching = allProducts.filter(p => matchesTerms(p.name, req.terms));
+    if (!normProducts) {
+        normProducts = allProducts.map(p => ({ p: p, n: normalizeFarmaTerm(p.name) }));
+    }
+
+    const terms = req.terms.map(normalizeFarmaTerm);
+    const matching = [];
+    for (let i = 0; i < normProducts.length; i++) {
+        const np = normProducts[i];
+        let ok = true;
+        for (let j = 0; j < terms.length; j++) {
+            if (np.n.indexOf(terms[j]) === -1) { ok = false; break; }
+        }
+        if (ok) matching.push(np.p);
+    }
 
     if (matching.length === 0) {
         return { reason: 'NOT_FOUND', required_qty: req.qty };
@@ -1262,9 +1335,9 @@ function findFarmaProduct(req, minMonths) {
     let bestStock = null;
 
     for (const product of matching) {
-        const productPrices = allPrices.filter(p => p.product_id === product.id);
+        const productPrices = pricesByProduct.get(product.id) || [];
         for (const price of productPrices) {
-            const supplier = allSuppliers.find(s => s.id === price.supplier_id);
+            const supplier = supplierById.get(price.supplier_id);
             const monthsLeft = price.expiration_date
                 ? Math.round((new Date(price.expiration_date) - today) / (30 * 24 * 60 * 60 * 1000) * 10) / 10
                 : null;
@@ -1300,7 +1373,9 @@ function findFarmaProduct(req, minMonths) {
 }
 
 function buildFarmadeleiteResults(minMonths) {
-    return FARMADELEITE.map(req => Object.assign({ name: req.name }, findFarmaProduct(req, minMonths)));
+    const ctx = buildIndexes();
+    const normProducts = ctx.allProducts.map(p => ({ p: p, n: normalizeFarmaTerm(p.name) }));
+    return FARMADELEITE.map(req => Object.assign({ name: req.name }, findFarmaProduct(req, minMonths, ctx, normProducts)));
 }
 
 function searchFarmaProduct(terms) {
@@ -1409,9 +1484,12 @@ function showToast(message, type) {
 
 function escapeHtml(text) {
     if (!text) return '';
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+    return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
 }
 
 // ----- INIT -----
@@ -1420,5 +1498,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initNavigation();
     initUploadHandlers();
     initCompareHandlers();
+    initProductsHandlers();
     loadDashboard();
 });
