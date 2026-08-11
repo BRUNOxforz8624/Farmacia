@@ -135,33 +135,64 @@ function parseDate(value) {
     if (!value) return null;
     if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
     if (typeof value === 'number') {
-        const d = new Date((value - 25569) * 86400 * 1000);
-        return isNaN(d.getTime()) ? null : d;
+        if (value >= 25569 && value <= 80000) {
+            const d = new Date(Math.round((value - 25569) * 86400 * 1000));
+            return isNaN(d.getTime()) ? null : d;
+        }
+        return null;
     }
-    const text = String(value).trim();
+    let text = String(value).trim().replace(/\s+/g, ' ');
+
+    // serial de Excel como texto ("46430", "46430.5")
+    if (/^\d{5,6}(\.\d+)?$/.test(text)) {
+        const num = parseFloat(text);
+        if (num >= 25569 && num <= 80000) {
+            const d = new Date(Math.round((num - 25569) * 86400 * 1000));
+            if (!isNaN(d.getTime())) return d;
+        }
+    }
+
+    // quita la parte de tiempo (2027-03-15 00:00:00, 12/02/2027 08:00, 2027-03-15T...)
+    if (/^\d{4}-\d{1,2}-\d{1,2}/.test(text)) {
+        text = text.slice(0, 10);
+    } else if (/^\d{1,2}[\/\-.]\d{1,2}[\/\-.]\d{2,4}/.test(text)) {
+        text = text.slice(0, 10);
+    }
     let m;
 
-    // dd/mm/aaaa (si el mes queda invalido, reintenta mm/dd/aaaa)
+    // dd/mm/aaaa (con verificacion real de mes); si no encaja, reintenta mm/dd/aaaa
     m = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
     if (m) {
-        let d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
-        if (!isNaN(d.getTime())) return d;
-        d = new Date(parseInt(m[3]), parseInt(m[1]) - 1, parseInt(m[2]));
-        if (!isNaN(d.getTime())) return d;
+        const d1 = parseInt(m[1]), m1 = parseInt(m[2]), y = parseInt(m[3]);
+        if (m1 >= 1 && m1 <= 12) {
+            const d = new Date(y, m1 - 1, d1);
+            if (d.getMonth() === m1 - 1 && d.getDate() === d1) return d;
+        }
+        if (d1 >= 1 && d1 <= 12) {
+            const d = new Date(y, d1 - 1, m1);
+            if (d.getMonth() === d1 - 1 && d.getDate() === m1) return d;
+        }
     }
 
     // dd/mm/aa
     m = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})$/);
     if (m) {
-        const d = new Date(parseInt(m[3]) + 2000, parseInt(m[2]) - 1, parseInt(m[1]));
-        if (!isNaN(d.getTime())) return d;
+        const d1 = parseInt(m[1]), m1 = parseInt(m[2]), y = parseInt(m[3]) + 2000;
+        if (m1 >= 1 && m1 <= 12) {
+            const d = new Date(y, m1 - 1, d1);
+            if (d.getMonth() === m1 - 1 && d.getDate() === d1) return d;
+        }
+        if (d1 >= 1 && d1 <= 12) {
+            const d = new Date(y, d1 - 1, m1);
+            if (d.getMonth() === d1 - 1 && d.getDate() === m1) return d;
+        }
     }
 
     // aaaa-mm-dd
     m = text.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
     if (m) {
         const d = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
-        if (!isNaN(d.getTime())) return d;
+        if (d.getMonth() === parseInt(m[2]) - 1 && d.getDate() === parseInt(m[3])) return d;
     }
 
     // mes/aaaa (12/2026, 12-2026, 12.2026) -> ultimo dia del mes
@@ -194,12 +225,12 @@ function parseDate(value) {
         }
     }
 
-    // nombre de mes: ENE-2027 / enero 2027 / ene/27
+    // nombre de mes (ENE-2027, enero 2027, 12-ene-2027, ene/27)
     const monthNames = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, oct: 10, nov: 11, dic: 12 };
-    m = text.toLowerCase().match(/^(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z]*[\/\-.\s]*(\d{2}|\d{4})$/);
+    m = text.toLowerCase().match(/^(?:(\d{1,2})[\/\-.\s]+)?(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z]*[\/\-.\s]*(\d{2}|\d{4})$/);
     if (m) {
-        const month = monthNames[m[1]];
-        let year = parseInt(m[2]);
+        const month = monthNames[m[2]];
+        let year = parseInt(m[3]);
         if (year < 100) year += 2000;
         const d = new Date(year, month, 0);
         if (!isNaN(d.getTime())) return d;
