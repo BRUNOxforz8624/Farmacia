@@ -188,6 +188,16 @@ const Store = {
     setPrices(d) { this._set('prices', d); },
     getUploads() { return this._get('uploads'); },
     setUploads(d) { this._set('uploads', d); },
+    getFarmadeleite() {
+        try {
+            return JSON.parse(localStorage.getItem('farmapp_farmadeleite'));
+        } catch (e) { return null; }
+    },
+    setFarmadeleite(d) { this._set('farmadeleite', d); },
+    getDroguerias() { return this._get('droguerias'); },
+    setDroguerias(d) { this._set('droguerias', d); },
+    getOrden() { return this._get('orden'); },
+    setOrden(d) { this._set('orden', d); },
     getNextId(type) {
         const key = 'farmapp_counters';
         let counters;
@@ -198,7 +208,7 @@ const Store = {
         return counters[type];
     },
     clearAll() {
-        ['products', 'suppliers', 'prices', 'uploads', 'counters'].forEach(k => {
+        ['products', 'suppliers', 'prices', 'uploads', 'droguerias', 'orden', 'counters'].forEach(k => {
             localStorage.removeItem('farmapp_' + k);
         });
     }
@@ -365,7 +375,7 @@ function getCell(row, colMap, field) {
 
 // ----- SAVE PRODUCTS -----
 
-function saveProducts(products, uploadId) {
+function saveProducts(products, uploadId, drogueriaId) {
     const allProducts = Store.getProducts();
     const allSuppliers = Store.getSuppliers();
     const allPrices = Store.getPrices();
@@ -424,7 +434,8 @@ function saveProducts(products, uploadId) {
             quantity: prod.quantity || 0,
             expiration_date: prod.expiration_date,
             special_conditions: prod.special_conditions,
-            upload_id: uploadId
+            upload_id: uploadId,
+            drogueria_id: drogueriaId || null
         });
         count++;
     }
@@ -630,6 +641,7 @@ function loadPageData(page) {
         case 'upload': loadUploadHistory(); break;
         case 'products': loadProducts(); break;
         case 'compare': applyFilters(); break;
+        case 'requirements': loadRequirements(); break;
     }
 }
 
@@ -667,7 +679,20 @@ function loadDashboard() {
 let productsPageLimit = 250;
 
 function loadProducts(search) {
-    const { allProducts, supplierById, pricesByProduct } = buildIndexes();
+    const { allProducts, allPrices, pricesByProduct } = buildIndexes();
+
+    const droguerias = Store.getDroguerias();
+    const drogueriaMap = new Map();
+    droguerias.forEach(d => drogueriaMap.set(d.id, d.name));
+
+    const colDrogIds = [];
+    const seen = new Set();
+    for (const price of allPrices) {
+        const did = price.drogueria_id || null;
+        if (seen.has(did)) continue;
+        seen.add(did);
+        colDrogIds.push(did);
+    }
 
     let filtered = allProducts;
     if (search) {
@@ -678,6 +703,20 @@ function loadProducts(search) {
         );
     }
 
+    const orden = Store.getOrden();
+    const ordenIds = new Set(orden.map(o => o.product_id));
+
+    const thead = document.getElementById('products-thead');
+    const ths = ['<th>Codigo</th>', '<th>Descripcion</th>', '<th>Precio Min</th>'];
+    colDrogIds.forEach(did => {
+        const label = did === null
+            ? 'Sin drogueria'
+            : (drogueriaMap.get(did) || ('Drogueria ' + did));
+        ths.push('<th>' + escapeHtml(label) + '</th>');
+    });
+    ths.push('<th>Acciones</th>');
+    thead.innerHTML = '<tr>' + ths.join('') + '</tr>';
+
     const tbody = document.querySelector('#products-table tbody');
     const rows = [];
 
@@ -685,35 +724,49 @@ function loadProducts(search) {
         const product = filtered[i];
         const productPrices = pricesByProduct.get(product.id) || [];
 
-        let minPrice = '-';
-        let supplier = '-';
-        let qty = 0;
-        let expiry = '-';
-
-        if (productPrices.length > 0) {
-            let cheapest = productPrices[0];
-            for (let j = 1; j < productPrices.length; j++) {
-                if (productPrices[j].price < cheapest.price) cheapest = productPrices[j];
+        const bestByDrog = new Map();
+        let minPrice = null;
+        for (let j = 0; j < productPrices.length; j++) {
+            const price = productPrices[j];
+            const did = price.drogueria_id || null;
+            if (!bestByDrog.has(did) || price.price < bestByDrog.get(did).price) {
+                bestByDrog.set(did, price);
             }
-            minPrice = 'Bs ' + cheapest.price.toFixed(2);
-            const sup = supplierById.get(cheapest.supplier_id);
-            supplier = sup ? sup.name : '-';
-            qty = cheapest.quantity;
-            expiry = cheapest.expiration_date || '-';
+            if (minPrice === null || price.price < minPrice.price) {
+                minPrice = price;
+            }
         }
 
-        rows.push(`<tr>
-            <td>${escapeHtml(product.barcode || '-')}</td>
-            <td>${escapeHtml(product.name)}</td>
-            <td><strong>${minPrice}</strong></td>
-            <td>${escapeHtml(supplier)}</td>
-            <td>${qty}</td>
-            <td>${expiry}</td>
-            <td><button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.id})">Eliminar</button></td>
-        </tr>`);
+        const cells = [
+            `<td>${escapeHtml(product.barcode || '-')}</td>`,
+            `<td>${escapeHtml(product.name)}</td>`,
+            `<td><strong>${minPrice ? 'Bs ' + minPrice.price.toFixed(2) : '-'}</strong></td>`
+        ];
+
+        colDrogIds.forEach(did => {
+            const best = bestByDrog.get(did);
+            if (best) {
+                cells.push(`<td><strong>Bs ${best.price.toFixed(2)}</strong><div style="font-size:0.75rem;color:var(--gray-400)">${best.quantity} uds</div></td>`);
+            } else {
+                cells.push('<td>-</td>');
+            }
+        });
+
+        const inOrden = ordenIds.has(product.id);
+        let acciones = '';
+        if (inOrden) {
+            acciones += `<button class="btn btn-sm btn-secondary" onclick="removeFromOrder(${product.id})">Quitar de orden</button> `;
+        } else {
+            acciones += `<button class="btn btn-sm btn-success" onclick="addToOrder(${product.id})">Agregar a orden</button> `;
+        }
+        acciones += `<button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.id})">Eliminar</button>`;
+        cells.push('<td>' + acciones + '</td>');
+        rows.push('<tr>' + cells.join('') + '</tr>');
     }
 
     tbody.innerHTML = rows.slice(0, productsPageLimit).join('');
+
+    updateOrderBadge();
 
     const container = document.getElementById('products-load-more-container');
     if (container) {
@@ -740,6 +793,77 @@ function initProductsHandlers() {
             loadProducts(document.getElementById('product-search').value.trim());
         });
     }
+    const downloadBtn = document.getElementById('orden-download');
+    if (downloadBtn) downloadBtn.addEventListener('click', downloadManualOrder);
+    const clearBtn = document.getElementById('orden-clear');
+    if (clearBtn) clearBtn.addEventListener('click', clearOrder);
+    updateOrderBadge();
+}
+
+function updateOrderBadge() {
+    const badge = document.getElementById('orden-count');
+    if (badge) badge.textContent = Store.getOrden().length;
+}
+
+function addToOrder(productId) {
+    const { productById, pricesByProduct, supplierById } = buildIndexes();
+    const product = productById.get(productId);
+    if (!product) return;
+
+    const orden = Store.getOrden();
+    if (orden.some(o => o.product_id === productId)) {
+        showToast('El producto ya esta en la orden', 'error');
+        return;
+    }
+
+    const productPrices = pricesByProduct.get(productId) || [];
+    if (productPrices.length === 0) {
+        showToast('El producto no tiene precios', 'error');
+        return;
+    }
+
+    let best = productPrices[0];
+    for (let i = 1; i < productPrices.length; i++) {
+        if (productPrices[i].price < best.price) best = productPrices[i];
+    }
+
+    const qty = parseInt(prompt('Cantidad a ordenar de "' + product.name + '":', '1'), 10);
+    if (!qty || qty < 1) return;
+
+    const supplier = supplierById.get(best.supplier_id);
+    orden.push({
+        product_id: product.id,
+        barcode: product.barcode || null,
+        name: product.name,
+        supplier_name: supplier ? supplier.name : 'Desconocido',
+        price: best.price,
+        quantity: qty,
+        special_conditions: best.special_conditions || null
+    });
+    Store.setOrden(orden);
+    showToast('Agregado a la orden de compra', 'success');
+    loadProducts(document.getElementById('product-search').value);
+}
+
+function removeFromOrder(productId) {
+    let orden = Store.getOrden();
+    orden = orden.filter(o => o.product_id !== productId);
+    Store.setOrden(orden);
+    showToast('Quitado de la orden de compra', 'success');
+    loadProducts(document.getElementById('product-search').value);
+}
+
+function clearOrder() {
+    if (!confirm('Vaciar la orden de compra?')) return;
+    Store.setOrden([]);
+    showToast('Orden vaciada', 'success');
+    loadProducts(document.getElementById('product-search').value);
+}
+
+function downloadManualOrder() {
+    const orden = Store.getOrden();
+    if (orden.length === 0) { showToast('La orden esta vacia. Agrega productos primero.', 'error'); return; }
+    downloadOrdersExcel(orden);
 }
 
 function deleteProduct(id) {
@@ -747,12 +871,15 @@ function deleteProduct(id) {
 
     let products = Store.getProducts();
     let prices = Store.getPrices();
+    let orden = Store.getOrden();
 
     products = products.filter(p => p.id !== id);
     prices = prices.filter(p => p.product_id !== id);
+    orden = orden.filter(o => o.product_id !== id);
 
     Store.setProducts(products);
     Store.setPrices(prices);
+    Store.setOrden(orden);
     showToast('Producto eliminado', 'success');
     loadProducts(document.getElementById('product-search').value);
 }
@@ -773,9 +900,9 @@ function initUploadHandlers() {
             e.preventDefault();
             pdfDropZone.classList.remove('dragover');
             const file = e.dataTransfer.files[0];
-            if (file && file.name.toLowerCase().endsWith('.pdf')) uploadFile(file, 'pdf');
+            if (file && file.name.toLowerCase().endsWith('.pdf')) askDrogueria(file, 'pdf');
         });
-        pdfInput.addEventListener('change', (e) => { if (e.target.files[0]) uploadFile(e.target.files[0], 'pdf'); });
+        pdfInput.addEventListener('change', (e) => { if (e.target.files[0]) askDrogueria(e.target.files[0], 'pdf'); });
     }
 
     if (excelDropZone) {
@@ -787,13 +914,18 @@ function initUploadHandlers() {
             excelDropZone.classList.remove('dragover');
             const file = e.dataTransfer.files[0];
             if (file && (file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls')))
-                uploadFile(file, 'excel');
+                askDrogueria(file, 'excel');
         });
-        excelInput.addEventListener('change', (e) => { if (e.target.files[0]) uploadFile(e.target.files[0], 'excel'); });
+        excelInput.addEventListener('change', (e) => { if (e.target.files[0]) askDrogueria(e.target.files[0], 'excel'); });
     }
 
+    const confirmBtn = document.getElementById('drogueria-confirm');
+    if (confirmBtn) confirmBtn.addEventListener('click', confirmDrogueria);
+    const cancelBtn = document.getElementById('drogueria-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', cancelDrogueria);
+
     document.getElementById('clear-all-btn').addEventListener('click', () => {
-        if (!confirm('Eliminar TODOS los productos, proveedores y precios?')) return;
+        if (!confirm('Eliminar TODOS los productos, laboratorios, precios y droguerias?')) return;
         Store.clearAll();
         showToast('Todos los datos fueron eliminados', 'success');
         loadProducts();
@@ -801,7 +933,64 @@ function initUploadHandlers() {
     });
 }
 
-async function uploadFile(file, type) {
+let pendingFile = null;
+let pendingFileType = null;
+
+function askDrogueria(file, type) {
+    pendingFile = file;
+    pendingFileType = type;
+
+    const select = document.getElementById('drogueria-select');
+    const droguerias = Store.getDroguerias();
+    select.innerHTML = '<option value="">-- Seleccionar drogueria --</option>';
+    droguerias.sort((a, b) => (a.name || '').localeCompare(b.name || '')).forEach(d => {
+        select.innerHTML += '<option value="' + d.id + '">' + escapeHtml(d.name) + '</option>';
+    });
+    document.getElementById('drogueria-new').value = '';
+    document.getElementById('drogueria-modal').style.display = 'flex';
+}
+
+function confirmDrogueria() {
+    const select = document.getElementById('drogueria-select');
+    const newName = document.getElementById('drogueria-new').value.trim();
+
+    let drogueriaId = null;
+
+    if (newName) {
+        const droguerias = Store.getDroguerias();
+        const existing = droguerias.find(d => (d.name || '').toLowerCase() === newName.toLowerCase());
+        if (existing) {
+            drogueriaId = existing.id;
+        } else {
+            const maxId = droguerias.length > 0 ? Math.max(...droguerias.map(d => d.id)) : 0;
+            drogueriaId = maxId + 1;
+            droguerias.push({ id: drogueriaId, name: newName });
+            Store.setDroguerias(droguerias);
+        }
+    } else if (select.value) {
+        drogueriaId = parseInt(select.value, 10);
+    }
+
+    if (drogueriaId === null) {
+        showToast('Selecciona o crea una drogueria', 'error');
+        return;
+    }
+
+    document.getElementById('drogueria-modal').style.display = 'none';
+    const file = pendingFile;
+    const type = pendingFileType;
+    pendingFile = null;
+    pendingFileType = null;
+    if (file && type) uploadFile(file, type, drogueriaId);
+}
+
+function cancelDrogueria() {
+    pendingFile = null;
+    pendingFileType = null;
+    document.getElementById('drogueria-modal').style.display = 'none';
+}
+
+async function uploadFile(file, type, drogueriaId) {
     const progressEl = document.getElementById(type + '-progress');
     const fillEl = document.getElementById(type + '-progress-fill');
     const statusEl = document.getElementById(type + '-status');
@@ -823,12 +1012,13 @@ async function uploadFile(file, type) {
         statusEl.textContent = 'Guardando...';
 
         const uploadId = Store.getNextId('uploads');
-        const imported = saveProducts(products, uploadId);
+        const imported = saveProducts(products, uploadId, drogueriaId);
 
         const upload = {
             id: uploadId,
             filename: file.name,
             file_type: type,
+            drogueria_id: drogueriaId || null,
             status: 'completed',
             records_imported: imported,
             created_at: new Date().toISOString()
@@ -861,6 +1051,10 @@ function loadUploadHistory() {
     const tbody = document.querySelector('#upload-history-table tbody');
     const rows = [];
 
+    const droguerias = Store.getDroguerias();
+    const drogueriaMap = {};
+    droguerias.forEach(d => { drogueriaMap[d.id] = d.name; });
+
     uploads.forEach(upload => {
         const typeBadge = upload.file_type === 'pdf'
             ? '<span class="badge" style="background:#dc2626">PDF</span>'
@@ -868,11 +1062,13 @@ function loadUploadHistory() {
         const statusBadge = upload.status === 'completed'
             ? '<span class="badge badge-success">Completado</span>'
             : '<span class="badge badge-danger">Error</span>';
+        const drogueriaName = upload.drogueria_id ? drogueriaMap[upload.drogueria_id] : null;
 
         rows.push(`
             <tr>
                 <td>${escapeHtml(upload.filename)}</td>
                 <td>${typeBadge}</td>
+                <td>${escapeHtml(drogueriaName || '-')}</td>
                 <td>${statusBadge}</td>
                 <td>${upload.records_imported}</td>
                 <td>${new Date(upload.created_at).toLocaleDateString()}</td>
@@ -1095,7 +1291,7 @@ function exportResults() {
 
     if (typeof XLSX === 'undefined') { showToast('SheetJS no disponible', 'error'); return; }
 
-    const wsData = [['Codigo', 'Producto', 'Proveedor', 'Precio', 'Cantidad', 'Vencimiento', 'Condicion', 'Estado']];
+    const wsData = [['Codigo', 'Producto', 'Laboratorio', 'Precio', 'Cantidad', 'Vencimiento', 'Condicion', 'Estado']];
     results.forEach(item => {
         wsData.push([
             item.barcode || '-',
@@ -1128,17 +1324,17 @@ function exportFarmadeleiteExcel(results) {
         ['FILTRO FARMADELEITE'],
         ['Fecha: ' + new Date().toLocaleDateString()],
         [],
-        ['#', 'Producto Requerido', 'Proveedor', 'Codigo', 'Precio', 'Cant. Requerida', 'Stock Disp.', 'Vencimiento', 'Condicion', 'Estado']
+        ['#', 'Producto Requerido', 'Laboratorio', 'Codigo', 'Precio', 'Cant. Requerida', 'Stock Disp.', 'Vencimiento', 'Condicion', 'Estado']
     ];
 
     results.forEach((item, i) => {
-        let estado, precio, stock, proveedor, vencimiento, condicion;
+        let estado, precio, stock, laboratorio, vencimiento, condicion;
 
         if (item.reason === 'OK') {
             estado = 'OK';
             precio = item.price;
             stock = item.quantity;
-            proveedor = item.supplier_name;
+            laboratorio = item.supplier_name;
             vencimiento = item.months_until_expiration !== null && item.months_until_expiration !== undefined
                 ? item.months_until_expiration + ' meses' : 'N/A';
             condicion = item.special_conditions || '-';
@@ -1146,14 +1342,14 @@ function exportFarmadeleiteExcel(results) {
             estado = 'STOCK INSUFICIENTE (tiene ' + (item.quantity || 0) + ' de ' + item.required_qty + ')';
             precio = item.price || '-';
             stock = item.quantity || 0;
-            proveedor = item.supplier_name || '-';
+            laboratorio = item.supplier_name || '-';
             vencimiento = '-';
             condicion = '-';
         } else {
             estado = 'NO ENCONTRADO';
             precio = '-';
             stock = 0;
-            proveedor = '-';
+            laboratorio = '-';
             vencimiento = '-';
             condicion = '-';
         }
@@ -1161,7 +1357,7 @@ function exportFarmadeleiteExcel(results) {
         wsData.push([
             i + 1,
             item.name,
-            proveedor,
+            laboratorio,
             item.barcode || '-',
             precio,
             item.required_qty,
@@ -1212,7 +1408,7 @@ function downloadOrdersExcel(items) {
     });
 
     const wb = XLSX.utils.book_new();
-    const summaryData = [['Proveedor', 'Productos', 'Subtotal']];
+    const summaryData = [['Laboratorio', 'Productos', 'Subtotal']];
     let grandTotal = 0;
 
     Object.keys(bySupplier).sort().forEach(supplier => {
@@ -1255,7 +1451,7 @@ function downloadOrdersExcel(items) {
 
 // ----- FILTRO / ORDEN FARMADELEITE -----
 
-const FARMADELEITE = [
+const FARMADELEITE_DEFAULT = [
     { name: "Ketoprofeno amp. IV.", qty: 6, terms: ["ketoprofeno"] },
     { name: "Lagrioftol gotas", qty: 6, terms: ["lagrioftol"] },
     { name: "Artrovit x30 tab.", qty: 6, terms: ["artrovit"] },
@@ -1305,6 +1501,21 @@ function normalizeFarmaTerm(text) {
     return (text || '').toLowerCase().replace(/,/g, '.').replace(/\s+/g, ' ').trim();
 }
 
+function normBarcode(text) {
+    return (text || '').toString().trim().replace(/\s+/g, '');
+}
+
+// Devuelve la lista editable de productos requeridos (localStorage) o la por defecto.
+function getFarmadeleiteList() {
+    const stored = Store.getFarmadeleite();
+    if (Array.isArray(stored)) return stored;
+    return FARMADELEITE_DEFAULT;
+}
+
+function saveFarmadeleiteList(list) {
+    Store.setFarmadeleite(list);
+}
+
 // Busca un producto de la lista Farmadeleite entre TODOS los archivos cargados.
 function findFarmaProduct(req, minMonths, ctx, normProducts) {
     const { allProducts, supplierById, pricesByProduct } = ctx || buildIndexes();
@@ -1314,12 +1525,23 @@ function findFarmaProduct(req, minMonths, ctx, normProducts) {
     }
 
     const terms = req.terms.map(normalizeFarmaTerm);
+    const barcode = req.barcode ? normBarcode(req.barcode) : null;
     const matching = [];
     for (let i = 0; i < normProducts.length; i++) {
         const np = normProducts[i];
-        let ok = true;
-        for (let j = 0; j < terms.length; j++) {
-            if (np.n.indexOf(terms[j]) === -1) { ok = false; break; }
+        let ok = false;
+        if (terms.length > 0) {
+            ok = true;
+            for (let j = 0; j < terms.length; j++) {
+                if (np.n.indexOf(terms[j]) === -1) { ok = false; break; }
+            }
+        }
+        if (!ok && barcode) {
+            const pb = np.p.barcode ? normBarcode(np.p.barcode) : '';
+            ok = pb === barcode;
+            if (!ok && barcode.length >= 4 && (pb.indexOf(barcode) !== -1 || barcode.indexOf(pb) !== -1)) {
+                ok = true;
+            }
         }
         if (ok) matching.push(np.p);
     }
@@ -1375,7 +1597,7 @@ function findFarmaProduct(req, minMonths, ctx, normProducts) {
 function buildFarmadeleiteResults(minMonths) {
     const ctx = buildIndexes();
     const normProducts = ctx.allProducts.map(p => ({ p: p, n: normalizeFarmaTerm(p.name) }));
-    return FARMADELEITE.map(req => Object.assign({ name: req.name }, findFarmaProduct(req, minMonths, ctx, normProducts)));
+    return getFarmadeleiteList().map(req => Object.assign({ name: req.name }, findFarmaProduct(req, minMonths, ctx, normProducts)));
 }
 
 function searchFarmaProduct(terms) {
@@ -1411,7 +1633,7 @@ function generateFarmadeleiteOrder() {
         ['ORDEN DE COMPRA - FARMADELEITE'],
         ['Fecha: ' + new Date().toLocaleDateString()],
         [],
-        ['#', 'Producto Requerido', 'Proveedor', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Stock Disp.', 'Subtotal', 'Estado']
+        ['#', 'Producto Requerido', 'Laboratorio', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Stock Disp.', 'Subtotal', 'Estado']
     ];
 
     let total = 0;
@@ -1470,6 +1692,121 @@ function generateFarmadeleiteOrder() {
     );
 }
 
+// ----- EDICION DE PRODUCTOS REQUERIDOS -----
+
+let editingFarmaIndex = null;
+
+function initRequirementsHandlers() {
+    const form = document.getElementById('farma-form');
+    if (form) {
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const name = document.getElementById('farma-name').value.trim();
+            const qty = parseInt(document.getElementById('farma-qty').value) || 3;
+            const termsText = document.getElementById('farma-terms').value.trim();
+            const barcode = document.getElementById('farma-barcode').value.trim();
+            if (!name) { showToast('Ingresa el nombre del producto', 'error'); return; }
+
+            const terms = termsText.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
+            if (terms.length === 0 && !barcode) { showToast('Ingresa terminos de busqueda o un codigo de barras', 'error'); return; }
+
+            const list = getFarmadeleiteList();
+            if (editingFarmaIndex !== null) {
+                list[editingFarmaIndex] = { name: name, qty: qty, terms: terms, barcode: barcode };
+                showToast('Producto actualizado', 'success');
+                cancelFarmaEdit();
+            } else {
+                list.push({ name: name, qty: qty, terms: terms, barcode: barcode });
+                showToast('Producto agregado', 'success');
+            }
+            saveFarmadeleiteList(list);
+            form.reset();
+            loadRequirements();
+        });
+    }
+
+    const cancelBtn = document.getElementById('farma-cancel');
+    if (cancelBtn) cancelBtn.addEventListener('click', () => { cancelFarmaEdit(); loadRequirements(); });
+
+    const resetBtn = document.getElementById('farma-reset');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+            if (!confirm('Restaurar la lista por defecto de productos requeridos?')) return;
+            try { localStorage.removeItem('farmapp_farmadeleite'); } catch (err) { }
+            cancelFarmaEdit();
+            loadRequirements();
+            showToast('Lista restaurada a la version por defecto', 'success');
+        });
+    }
+}
+
+function cancelFarmaEdit() {
+    editingFarmaIndex = null;
+    const form = document.getElementById('farma-form');
+    if (form) form.reset();
+    const title = document.getElementById('farma-form-title');
+    if (title) title.textContent = 'Agregar Producto Requerido';
+    const submit = document.getElementById('farma-submit');
+    if (submit) submit.textContent = 'Agregar';
+    const cancel = document.getElementById('farma-cancel');
+    if (cancel) cancel.style.display = 'none';
+}
+
+function loadRequirements() {
+    const list = getFarmadeleiteList();
+    const tbody = document.querySelector('#farma-table tbody');
+    const rows = [];
+
+    list.forEach((item, i) => {
+        rows.push(`
+            <tr>
+                <td>${i + 1}</td>
+                <td>${escapeHtml(item.name)}</td>
+                <td>${escapeHtml(item.barcode || '-')}</td>
+                <td>${item.qty}</td>
+                <td>${escapeHtml(item.terms.join(', '))}</td>
+                <td>
+                    <button class="btn btn-sm btn-secondary" onclick="editFarmaProduct(${i})">Editar</button>
+                    <button class="btn btn-sm btn-danger" onclick="deleteFarmaProduct(${i})">Eliminar</button>
+                </td>
+            </tr>
+        `);
+    });
+
+    tbody.innerHTML = rows.join('');
+    const countEl = document.getElementById('farma-count');
+    if (countEl) countEl.textContent = list.length;
+}
+
+function editFarmaProduct(index) {
+    const list = getFarmadeleiteList();
+    const item = list[index];
+    if (!item) return;
+
+    editingFarmaIndex = index;
+    document.getElementById('farma-name').value = item.name;
+    document.getElementById('farma-qty').value = item.qty;
+    document.getElementById('farma-terms').value = item.terms.join(', ');
+    document.getElementById('farma-barcode').value = item.barcode || '';
+    document.getElementById('farma-form-title').textContent = 'Editar Producto Requerido';
+    document.getElementById('farma-submit').textContent = 'Guardar Cambios';
+    document.getElementById('farma-cancel').style.display = 'inline-flex';
+    document.getElementById('farma-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function deleteFarmaProduct(index) {
+    const list = getFarmadeleiteList();
+    const item = list[index];
+    if (!item) return;
+    if (!confirm('Eliminar "' + item.name + '" de la lista?')) return;
+
+    list.splice(index, 1);
+    saveFarmadeleiteList(list);
+    if (editingFarmaIndex === index) cancelFarmaEdit();
+    loadRequirements();
+    showToast('Producto eliminado', 'success');
+}
+
 // ----- UTILS -----
 
 function showToast(message, type) {
@@ -1499,5 +1836,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initUploadHandlers();
     initCompareHandlers();
     initProductsHandlers();
+    initRequirementsHandlers();
     loadDashboard();
 });

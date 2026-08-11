@@ -34,6 +34,10 @@
                     <span class="icon">&#8644;</span>
                     Comparar Precios
                 </li>
+                <li class="nav-item" data-page="requirements">
+                    <span class="icon">&#10003;</span>
+                    Productos Req.
+                </li>
             </ul>
         </nav>
 
@@ -49,7 +53,7 @@
                     </div>
                     <div class="stat-card">
                         <div class="stat-value" id="total-suppliers">0</div>
-                        <div class="stat-label">Proveedores</div>
+                        <div class="stat-label">Laboratorios</div>
                     </div>
                     <div class="stat-card success">
                         <div class="stat-value" id="valid-offers">0</div>
@@ -72,7 +76,7 @@
                                     <tr>
                                         <th>Codigo</th>
                                         <th>Descripcion</th>
-                                        <th>Marca/Proveedor</th>
+                                        <th>Laboratorio</th>
                                         <th>Precio</th>
                                         <th>Cantidad</th>
                                         <th>Vence</th>
@@ -133,6 +137,7 @@
                                     <tr>
                                         <th>Archivo</th>
                                         <th>Tipo</th>
+                                        <th>Drogueria</th>
                                         <th>Estado</th>
                                         <th>Registros</th>
                                         <th>Fecha</th>
@@ -151,6 +156,9 @@
                 
                 <div class="toolbar">
                     <input type="text" id="product-search" class="input" placeholder="Buscar producto o codigo de barras...">
+                    <span class="badge" id="orden-count">0</span>
+                    <button class="btn btn-success btn-sm" id="orden-download">Descargar orden</button>
+                    <button class="btn btn-secondary btn-sm" id="orden-clear">Vaciar orden</button>
                     <button class="btn btn-danger btn-sm" id="clear-all-btn">Borrar Todos</button>
                 </div>
 
@@ -158,23 +166,72 @@
                     <div class="card-body">
                         <div class="table-container">
                             <table class="table" id="products-table">
-                                <thead>
-                                    <tr>
-                                        <th>Codigo</th>
-                                        <th>Descripcion</th>
-                                        <th>Precio Min</th>
-                                        <th>Proveedor</th>
-                                        <th>Stock</th>
-                                        <th>Vence</th>
-                                        <th>Acciones</th>
-                                    </tr>
-                                </thead>
+                                <thead id="products-thead"></thead>
                                 <tbody></tbody>
                             </table>
                         </div>
                         <div class="load-more" id="products-load-more-container" style="display:none">
                             <span id="products-shown-count"></span>
                             <button class="btn btn-secondary btn-sm" id="products-load-more" style="display:none">Mostrar mas</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Requeridos -->
+            <section id="requirements" class="page">
+                <h1>Productos Requeridos (Filtro Farmadeleite)</h1>
+
+                <div class="card">
+                    <div class="card-header"><h3 id="farma-form-title">Agregar Producto Requerido</h3></div>
+                    <div class="card-body">
+                        <form id="farma-form">
+                            <div class="filters-grid">
+                                <div class="filter-group">
+                                    <label>Nombre del producto</label>
+                                    <input type="text" id="farma-name" class="input" placeholder="Ej: Ketoprofeno amp. IV." required>
+                                </div>
+                                <div class="filter-group">
+                                    <label>Codigo de barras (opcional)</label>
+                                    <input type="text" id="farma-barcode" class="input" placeholder="Ej: 7591071456184">
+                                </div>
+                                <div class="filter-group">
+                                    <label>Cantidad requerida</label>
+                                    <input type="number" id="farma-qty" class="input" value="3" min="1" step="1" required>
+                                </div>
+                                <div class="filter-group">
+                                    <label>Terminos de busqueda (separados por coma)</label>
+                                    <input type="text" id="farma-terms" class="input" placeholder="Ej: ketoprofeno o festal, x20" required>
+                                </div>
+                                <div class="filter-group filter-actions">
+                                    <button type="submit" class="btn btn-primary" id="farma-submit">Agregar</button>
+                                    <button type="button" class="btn btn-secondary" id="farma-cancel" style="display:none">Cancelar</button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3>Lista de Productos <span class="badge" id="farma-count">0</span></h3>
+                        <button class="btn btn-secondary btn-sm" id="farma-reset">Restaurar por defecto</button>
+                    </div>
+                    <div class="card-body">
+                        <div class="table-container">
+                            <table class="table" id="farma-table">
+                                <thead>
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Producto</th>
+                                        <th>Codigo</th>
+                                        <th>Cant.</th>
+                                        <th>Terminos</th>
+                                        <th>Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody></tbody>
+                            </table>
                         </div>
                     </div>
                 </div>
@@ -193,7 +250,7 @@
                                 <input type="text" id="compare-search" class="input" placeholder="Nombre o codigo...">
                             </div>
                             <div class="filter-group">
-                                <label>Proveedor</label>
+                                <label>Laboratorio</label>
                                 <select id="filter-supplier" class="input">
                                     <option value="">Todos</option>
                                 </select>
@@ -240,22 +297,21 @@
 
                 <div class="card">
                     <div class="card-header">
-                        <h3>Resultados</h3>
-                        <div style="display:flex; align-items:center; gap:12px;">
+                        <div style="display:flex; align-items:center; gap:12px; width:100%; justify-content:flex-end; flex-wrap:wrap;">
                             <span class="badge" id="results-count">0</span>
                             <button class="btn btn-primary btn-sm" id="export-btn">Exportar Excel</button>
                             <button class="btn btn-success btn-sm" id="orders-btn">Ordenes de Compra</button>
                             <button class="btn btn-primary btn-sm" id="farmadeleite-btn" style="background:#7c3aed">Orden Farmadeleite</button>
                         </div>
                     </div>
-                    <div class="card-body">
+                    <div class="card-body" style="display:none">
                         <div class="table-container">
                             <table class="table" id="compare-table">
                                 <thead>
                                     <tr>
                                         <th>Codigo</th>
                                         <th>Descripcion</th>
-                                        <th>Marca/Proveedor</th>
+                                        <th>Laboratorio</th>
                                         <th>Precio</th>
                                         <th>Cantidad</th>
                                         <th>Vence en</th>
@@ -273,6 +329,25 @@
     </div>
 
     <div class="toast-container" id="toast-container"></div>
+
+    <div class="modal-overlay" id="drogueria-modal" style="display:none">
+        <div class="modal">
+            <h3>Drogueria del archivo</h3>
+            <p class="modal-desc" id="drogueria-modal-desc">Selecciona a que drogueria pertenece este archivo.</p>
+            <div class="filter-group" style="margin-bottom:12px">
+                <label>Drogueria existente</label>
+                <select id="drogueria-select" class="input"></select>
+            </div>
+            <div class="filter-group" style="margin-bottom:16px">
+                <label>O crear una nueva</label>
+                <input type="text" id="drogueria-new" class="input" placeholder="Nombre de la nueva drogueria">
+            </div>
+            <div class="filter-actions">
+                <button class="btn btn-primary" id="drogueria-confirm">Subir archivo</button>
+                <button class="btn btn-secondary" id="drogueria-cancel">Cancelar</button>
+            </div>
+        </div>
+    </div>
 
     <script>
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';

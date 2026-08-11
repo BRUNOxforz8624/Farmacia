@@ -650,39 +650,208 @@ h1 {
 }
 
 @media (max-width: 768px) {
+    /* Barra de navegacion inferior (estilo movil) */
     .sidebar {
-        width: 72px;
-        overflow: hidden;
+        position: fixed;
+        top: auto;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        width: 100%;
+        height: auto;
+        flex-direction: row;
+        align-items: stretch;
+        border-top: 1px solid var(--gray-200);
+        border-right: none;
+        box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.06);
+        z-index: 100;
     }
-    
-    .nav-item span:not(.icon) {
+
+    .logo {
         display: none;
     }
-    
-    .main-content {
-        margin-left: 72px;
-        padding: 24px 16px;
+
+    .nav-menu {
+        display: flex;
+        flex-direction: row;
+        padding: 4px 0;
+        margin: 0;
+        flex: 1;
+        justify-content: space-around;
     }
-    
+
+    .nav-item {
+        flex-direction: column;
+        gap: 2px;
+        padding: 8px 6px;
+        margin: 0;
+        font-size: 0.68rem;
+        flex: 1;
+        border-radius: 0;
+        justify-content: center;
+        text-align: center;
+    }
+
+    .nav-item.active {
+        background: transparent;
+        color: var(--primary);
+    }
+
+    .nav-item.active .icon {
+        background: rgba(99, 102, 241, 0.12);
+        border-radius: 50%;
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .main-content {
+        margin-left: 0;
+        padding: 16px;
+        padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+    }
+
+    h1 {
+        font-size: 1.35rem;
+        margin-bottom: 20px;
+    }
+
+    .card-header {
+        padding: 16px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .card-body {
+        padding: 16px;
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .stat-card {
+        padding: 16px;
+    }
+
+    .stat-value {
+        font-size: 1.6rem;
+    }
+
+    .table th,
+    .table td {
+        padding: 10px 12px;
+        white-space: nowrap;
+    }
+
+    .table td {
+        font-size: 0.82rem;
+    }
+
     .filters-grid {
         grid-template-columns: 1fr;
     }
-    
+
     .upload-grid {
         grid-template-columns: 1fr;
+        gap: 16px;
+        margin-bottom: 20px;
     }
-    
+
+    .upload-zone {
+        padding: 28px 16px;
+    }
+
     .toolbar {
         flex-direction: column;
+        align-items: stretch;
     }
-    
+
     .toolbar .input {
         width: 100%;
     }
-    
-    .stats-grid {
-        grid-template-columns: repeat(2, 1fr);
+
+    .filter-actions {
+        flex-direction: column;
     }
+
+    .filter-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .toast-container {
+        bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+        left: 16px;
+        right: 16px;
+    }
+
+    .toast {
+        justify-content: center;
+    }
+}
+
+@media (max-width: 420px) {
+    .stats-grid {
+        gap: 10px;
+    }
+
+    .stat-card {
+        padding: 14px;
+    }
+
+    .stat-value {
+        font-size: 1.4rem;
+    }
+
+    .stat-label {
+        font-size: 0.78rem;
+    }
+
+    .load-more {
+        flex-direction: column;
+        gap: 8px;
+    }
+}
+
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(15, 23, 42, 0.55);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.modal {
+    background: white;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    padding: 24px;
+    width: 100%;
+    max-width: 420px;
+}
+
+.modal h3 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    color: var(--gray-900);
+    margin-bottom: 6px;
+}
+
+.modal-desc {
+    color: var(--gray-500);
+    font-size: 0.875rem;
+    margin-bottom: 18px;
 }
 
 .load-more {
