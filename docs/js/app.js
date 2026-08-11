@@ -679,7 +679,7 @@ function loadDashboard() {
 let productsPageLimit = 250;
 
 function loadProducts(search) {
-    const { allProducts, pricesByProduct } = buildIndexes();
+    const { allProducts, pricesByProduct, supplierById } = buildIndexes();
 
     const droguerias = Store.getDroguerias();
     const drogueriaMap = new Map();
@@ -698,49 +698,84 @@ function loadProducts(search) {
     const ordenIds = new Set(orden.map(o => o.product_id));
 
     const thead = document.getElementById('products-thead');
-    thead.innerHTML = '<tr><th>Codigo</th><th>Descripcion</th><th>Precio Min</th><th>Droguerias</th><th>Acciones</th></tr>';
-
     const tbody = document.querySelector('#products-table tbody');
     const rows = [];
 
-    for (let i = 0; i < filtered.length; i++) {
-        const product = filtered[i];
-        const productPrices = pricesByProduct.get(product.id) || [];
+    function accionesCell(productId) {
+        const inOrden = ordenIds.has(productId);
+        let html = '';
+        if (inOrden) {
+            html += `<button class="btn btn-sm btn-secondary" onclick="removeFromOrder(${productId})">Quitar de orden</button> `;
+        } else {
+            html += `<button class="btn btn-sm btn-success" onclick="addToOrder(${productId})">Agregar a orden</button> `;
+        }
+        html += `<button class="btn btn-sm btn-danger" onclick="deleteProduct(${productId})">Eliminar</button>`;
+        return html;
+    }
 
-        let minPrice = null;
-        let minDrog = null;
-        for (let j = 0; j < productPrices.length; j++) {
-            const price = productPrices[j];
-            if (minPrice === null || price.price < minPrice.price) {
-                minPrice = price;
-                minDrog = price.drogueria_id || null;
+    if (search) {
+        // Vista de busqueda: todas las ofertas del producto/barcode
+        thead.innerHTML = '<tr><th>Codigo</th><th>Descripcion</th><th>Droguerias</th><th>Laboratorio</th><th>Precio</th><th>Cantidad</th><th>Vencimiento</th><th>Acciones</th></tr>';
+
+        for (const product of filtered) {
+            const productPrices = pricesByProduct.get(product.id) || [];
+            for (const price of productPrices) {
+                const supplier = supplierById.get(price.supplier_id);
+                const did = price.drogueria_id || null;
+                const drogueriaName = did === null
+                    ? 'Sin drogueria'
+                    : (drogueriaMap.get(did) || ('Drogueria ' + did));
+
+                rows.push(`<tr>
+                    <td>${escapeHtml(product.barcode || '-')}</td>
+                    <td>${escapeHtml(product.name)}</td>
+                    <td>${escapeHtml(drogueriaName)}</td>
+                    <td>${escapeHtml(supplier ? supplier.name : '-')}</td>
+                    <td><strong>Bs ${price.price.toFixed(2)}</strong></td>
+                    <td>${price.quantity} uds</td>
+                    <td>${escapeHtml(price.expiration_date || '-')}</td>
+                    <td>${accionesCell(product.id)}</td>
+                </tr>`);
             }
         }
 
-        let drogueriaName = '-';
-        if (minPrice) {
-            drogueriaName = minDrog === null
-                ? 'Sin drogueria'
-                : (drogueriaMap.get(minDrog) || ('Drogueria ' + minDrog));
+        if (rows.length === 0) {
+            rows.push('<tr><td colspan="8" style="text-align:center; color:var(--gray-400); padding:40px">No se encontraron productos con ese codigo o nombre</td></tr>');
         }
+    } else {
+        // Vista agrupada: una fila por producto con el mejor precio
+        thead.innerHTML = '<tr><th>Codigo</th><th>Descripcion</th><th>Precio Min</th><th>Droguerias</th><th>Acciones</th></tr>';
 
-        const cells = [
-            `<td>${escapeHtml(product.barcode || '-')}</td>`,
-            `<td>${escapeHtml(product.name)}</td>`,
-            `<td><strong>${minPrice ? 'Bs ' + minPrice.price.toFixed(2) : '-'}</strong></td>`,
-            `<td>${escapeHtml(drogueriaName)}</td>`
-        ];
+        for (let i = 0; i < filtered.length; i++) {
+            const product = filtered[i];
+            const productPrices = pricesByProduct.get(product.id) || [];
 
-        const inOrden = ordenIds.has(product.id);
-        let acciones = '';
-        if (inOrden) {
-            acciones += `<button class="btn btn-sm btn-secondary" onclick="removeFromOrder(${product.id})">Quitar de orden</button> `;
-        } else {
-            acciones += `<button class="btn btn-sm btn-success" onclick="addToOrder(${product.id})">Agregar a orden</button> `;
+            let minPrice = null;
+            let minDrog = null;
+            for (let j = 0; j < productPrices.length; j++) {
+                const price = productPrices[j];
+                if (minPrice === null || price.price < minPrice.price) {
+                    minPrice = price;
+                    minDrog = price.drogueria_id || null;
+                }
+            }
+
+            let drogueriaName = '-';
+            if (minPrice) {
+                drogueriaName = minDrog === null
+                    ? 'Sin drogueria'
+                    : (drogueriaMap.get(minDrog) || ('Drogueria ' + minDrog));
+            }
+
+            const cells = [
+                `<td>${escapeHtml(product.barcode || '-')}</td>`,
+                `<td>${escapeHtml(product.name)}</td>`,
+                `<td><strong>${minPrice ? 'Bs ' + minPrice.price.toFixed(2) : '-'}</strong></td>`,
+                `<td>${escapeHtml(drogueriaName)}</td>`
+            ];
+            cells.push('<td>' + accionesCell(product.id) + '</td>');
+            rows.push('<tr>' + cells.join('') + '</tr>');
         }
-        acciones += `<button class="btn btn-sm btn-danger" onclick="deleteProduct(${product.id})">Eliminar</button>`;
-        cells.push('<td>' + acciones + '</td>');
-        rows.push('<tr>' + cells.join('') + '</tr>');
     }
 
     tbody.innerHTML = rows.slice(0, productsPageLimit).join('');
