@@ -679,20 +679,11 @@ function loadDashboard() {
 let productsPageLimit = 250;
 
 function loadProducts(search) {
-    const { allProducts, allPrices, pricesByProduct } = buildIndexes();
+    const { allProducts, pricesByProduct } = buildIndexes();
 
     const droguerias = Store.getDroguerias();
     const drogueriaMap = new Map();
     droguerias.forEach(d => drogueriaMap.set(d.id, d.name));
-
-    const colDrogIds = [];
-    const seen = new Set();
-    for (const price of allPrices) {
-        const did = price.drogueria_id || null;
-        if (seen.has(did)) continue;
-        seen.add(did);
-        colDrogIds.push(did);
-    }
 
     let filtered = allProducts;
     if (search) {
@@ -707,15 +698,7 @@ function loadProducts(search) {
     const ordenIds = new Set(orden.map(o => o.product_id));
 
     const thead = document.getElementById('products-thead');
-    const ths = ['<th>Codigo</th>', '<th>Descripcion</th>', '<th>Precio Min</th>'];
-    colDrogIds.forEach(did => {
-        const label = did === null
-            ? 'Sin drogueria'
-            : (drogueriaMap.get(did) || ('Drogueria ' + did));
-        ths.push('<th>' + escapeHtml(label) + '</th>');
-    });
-    ths.push('<th>Acciones</th>');
-    thead.innerHTML = '<tr>' + ths.join('') + '</tr>';
+    thead.innerHTML = '<tr><th>Codigo</th><th>Descripcion</th><th>Precio Min</th><th>Droguerias</th><th>Acciones</th></tr>';
 
     const tbody = document.querySelector('#products-table tbody');
     const rows = [];
@@ -724,33 +707,29 @@ function loadProducts(search) {
         const product = filtered[i];
         const productPrices = pricesByProduct.get(product.id) || [];
 
-        const bestByDrog = new Map();
         let minPrice = null;
+        let minDrog = null;
         for (let j = 0; j < productPrices.length; j++) {
             const price = productPrices[j];
-            const did = price.drogueria_id || null;
-            if (!bestByDrog.has(did) || price.price < bestByDrog.get(did).price) {
-                bestByDrog.set(did, price);
-            }
             if (minPrice === null || price.price < minPrice.price) {
                 minPrice = price;
+                minDrog = price.drogueria_id || null;
             }
+        }
+
+        let drogueriaName = '-';
+        if (minPrice) {
+            drogueriaName = minDrog === null
+                ? 'Sin drogueria'
+                : (drogueriaMap.get(minDrog) || ('Drogueria ' + minDrog));
         }
 
         const cells = [
             `<td>${escapeHtml(product.barcode || '-')}</td>`,
             `<td>${escapeHtml(product.name)}</td>`,
-            `<td><strong>${minPrice ? 'Bs ' + minPrice.price.toFixed(2) : '-'}</strong></td>`
+            `<td><strong>${minPrice ? 'Bs ' + minPrice.price.toFixed(2) : '-'}</strong></td>`,
+            `<td>${escapeHtml(drogueriaName)}</td>`
         ];
-
-        colDrogIds.forEach(did => {
-            const best = bestByDrog.get(did);
-            if (best) {
-                cells.push(`<td><strong>Bs ${best.price.toFixed(2)}</strong><div style="font-size:0.75rem;color:var(--gray-400)">${best.quantity} uds</div></td>`);
-            } else {
-                cells.push('<td>-</td>');
-            }
-        });
 
         const inOrden = ordenIds.has(product.id);
         let acciones = '';
