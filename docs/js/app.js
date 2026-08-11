@@ -116,52 +116,94 @@ function parseInteger(value) {
     if (value === null || value === undefined || value === '') return null;
     if (typeof value === 'number') return Math.floor(value);
     try {
-        let text = String(value).trim().replace(/[^\d-]/g, '');
-        if (text) return parseInt(text, 10);
+        let text = String(value).trim().replace(/\s+/g, '');
+        if (text.includes(',')) {
+            // coma = decimal, punto = miles (1.200,00 -> 1200; 2,5 -> 2)
+            text = text.replace(/\./g, '').replace(',', '.');
+        } else {
+            // sin coma: el punto se trata como separador de miles (1.500 -> 1500)
+            text = text.replace(/\./g, '');
+        }
+        text = text.replace(/[^\d.]/g, '');
+        const num = parseFloat(text);
+        if (!isNaN(num)) return Math.floor(num);
     } catch (e) { }
     return null;
 }
 
 function parseDate(value) {
     if (!value) return null;
-    if (value instanceof Date) return value;
+    if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
     if (typeof value === 'number') {
         const d = new Date((value - 25569) * 86400 * 1000);
         return isNaN(d.getTime()) ? null : d;
     }
-    const dateFormats = [
-        /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/,
-        /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})$/,
-        /^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/,
-        /^(\d{1,2})[\/\-.](\d{4})$/,
-        /^(\d{1,2})[\/\-.](\d{2})$/
-    ];
     const text = String(value).trim();
-    let match;
+    let m;
 
-    match = text.match(dateFormats[0]);
-    if (match) {
-        const d = new Date(parseInt(match[3]), parseInt(match[2]) - 1, parseInt(match[1]));
+    // dd/mm/aaaa (si el mes queda invalido, reintenta mm/dd/aaaa)
+    m = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+    if (m) {
+        let d = new Date(parseInt(m[3]), parseInt(m[2]) - 1, parseInt(m[1]));
         if (!isNaN(d.getTime())) return d;
-        const d2 = new Date(parseInt(match[3]), parseInt(match[1]) - 1, parseInt(match[2]));
-        if (!isNaN(d2.getTime())) return d2;
-    }
-
-    match = text.match(dateFormats[1]);
-    if (match) {
-        const year = parseInt(match[3]) + 2000;
-        const d = new Date(year, parseInt(match[2]) - 1, parseInt(match[1]));
+        d = new Date(parseInt(m[3]), parseInt(m[1]) - 1, parseInt(m[2]));
         if (!isNaN(d.getTime())) return d;
     }
 
-    match = text.match(dateFormats[2]);
-    if (match) {
-        const d = new Date(parseInt(match[1]), parseInt(match[2]) - 1, parseInt(match[3]));
+    // dd/mm/aa
+    m = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2})$/);
+    if (m) {
+        const d = new Date(parseInt(m[3]) + 2000, parseInt(m[2]) - 1, parseInt(m[1]));
         if (!isNaN(d.getTime())) return d;
     }
 
-    const d = new Date(text);
-    if (!isNaN(d.getTime())) return d;
+    // aaaa-mm-dd
+    m = text.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+    if (m) {
+        const d = new Date(parseInt(m[1]), parseInt(m[2]) - 1, parseInt(m[3]));
+        if (!isNaN(d.getTime())) return d;
+    }
+
+    // mes/aaaa (12/2026, 12-2026, 12.2026) -> ultimo dia del mes
+    m = text.match(/^(\d{1,2})[\/\-.](\d{4})$/);
+    if (m) {
+        const month = parseInt(m[1]);
+        if (month >= 1 && month <= 12) {
+            const d = new Date(parseInt(m[2]), month, 0);
+            if (!isNaN(d.getTime())) return d;
+        }
+    }
+
+    // mes/aa (01/27)
+    m = text.match(/^(\d{1,2})[\/\-.](\d{2})$/);
+    if (m) {
+        const month = parseInt(m[1]);
+        if (month >= 1 && month <= 12) {
+            const d = new Date(parseInt(m[2]) + 2000, month, 0);
+            if (!isNaN(d.getTime())) return d;
+        }
+    }
+
+    // aaaa-mm ISO
+    m = text.match(/^(\d{4})[\/\-.](\d{1,2})$/);
+    if (m) {
+        const month = parseInt(m[2]);
+        if (month >= 1 && month <= 12) {
+            const d = new Date(parseInt(m[1]), month, 0);
+            if (!isNaN(d.getTime())) return d;
+        }
+    }
+
+    // nombre de mes: ENE-2027 / enero 2027 / ene/27
+    const monthNames = { ene: 1, feb: 2, mar: 3, abr: 4, may: 5, jun: 6, jul: 7, ago: 8, sep: 9, oct: 10, nov: 11, dic: 12 };
+    m = text.toLowerCase().match(/^(ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)[a-z]*[\/\-.\s]*(\d{2}|\d{4})$/);
+    if (m) {
+        const month = monthNames[m[1]];
+        let year = parseInt(m[2]);
+        if (year < 100) year += 2000;
+        const d = new Date(year, month, 0);
+        if (!isNaN(d.getTime())) return d;
+    }
 
     return null;
 }
