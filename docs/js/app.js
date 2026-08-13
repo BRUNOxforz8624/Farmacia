@@ -566,6 +566,10 @@ function get_best_prices(minQty, minMonths) {
 
     const { allPrices, productById, supplierById } = buildIndexes();
 
+    const droguerias = Store.getDroguerias();
+    const drogueriaMap = new Map();
+    droguerias.forEach(d => drogueriaMap.set(d.id, d.name));
+
     const today = new Date();
     const cutoffDate = new Date(today.getTime() + minMonths * 30 * 24 * 60 * 60 * 1000);
 
@@ -590,6 +594,11 @@ function get_best_prices(minQty, minMonths) {
         const monthsLeft = price.expiration_date ?
             (new Date(price.expiration_date) - today) / (30 * 24 * 60 * 60 * 1000) : null;
 
+        const did = price.drogueria_id || null;
+        const drogueriaName = did === null
+            ? 'Sin drogueria'
+            : (drogueriaMap.get(did) || ('Drogueria ' + did));
+
         groups[groupKey].push({
             product_id: product.id,
             barcode: product.barcode,
@@ -601,6 +610,8 @@ function get_best_prices(minQty, minMonths) {
             expiration_date: price.expiration_date,
             months_until_expiration: monthsLeft ? Math.round(monthsLeft * 10) / 10 : null,
             special_conditions: price.special_conditions,
+            drogueria_id: did,
+            drogueria_name: drogueriaName,
             is_valid: is_valid_offer(price, minQty, minMonths)
         });
     });
@@ -624,6 +635,10 @@ function compare_product(searchTerm, minQty, minMonths) {
     const { allProducts, productById, supplierById, pricesByProduct } = buildIndexes();
     const today = new Date();
     const term = searchTerm.toLowerCase();
+
+    const droguerias = Store.getDroguerias();
+    const drogueriaMap = new Map();
+    droguerias.forEach(d => drogueriaMap.set(d.id, d.name));
 
     const matchingProducts = allProducts.filter(p => {
         const nameMatch = p.name && p.name.toLowerCase().includes(term);
@@ -651,6 +666,11 @@ function compare_product(searchTerm, minQty, minMonths) {
             const monthsLeft = price.expiration_date ?
                 (new Date(price.expiration_date) - today) / (30 * 24 * 60 * 60 * 1000) : null;
 
+            const did = price.drogueria_id || null;
+            const drogueriaName = did === null
+                ? 'Sin drogueria'
+                : (drogueriaMap.get(did) || ('Drogueria ' + did));
+
             results.push({
                 product_id: product.id,
                 barcode: product.barcode,
@@ -662,6 +682,8 @@ function compare_product(searchTerm, minQty, minMonths) {
                 expiration_date: price.expiration_date,
                 months_until_expiration: monthsLeft ? Math.round(monthsLeft * 10) / 10 : null,
                 special_conditions: price.special_conditions,
+                drogueria_id: did,
+                drogueria_name: drogueriaName,
                 is_valid: is_valid_offer(price, minQty, minMonths)
             });
         });
@@ -1261,14 +1283,14 @@ function displayFarmadeleiteResults(results) {
     tbody.innerHTML = '';
 
     if (results.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--gray-400); padding:60px 20px"><div class="empty-state"><h3>No se encontraron resultados</h3><p>Intenta ajustar los filtros de busqueda</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--gray-400); padding:60px 20px"><div class="empty-state"><h3>No se encontraron resultados</h3><p>Intenta ajustar los filtros de busqueda</p></div></td></tr>';
         return;
     }
 
     const rows = [];
 
     results.forEach(item => {
-        let statusClass, statusText, codeText, priceText, qtyText, supplierText, expiryText, condText;
+        let statusClass, statusText, codeText, priceText, qtyText, supplierText, drogueriaText, expiryText, condText;
 
         if (item.reason === 'OK') {
             statusClass = 'status-valid';
@@ -1276,6 +1298,7 @@ function displayFarmadeleiteResults(results) {
             codeText = item.barcode || '-';
             priceText = 'Bs ' + item.price.toFixed(2);
             qtyText = item.quantity + ' uds (req ' + item.required_qty + ')';
+            drogueriaText = item.drogueria_name || '-';
             supplierText = item.supplier_name;
             expiryText = item.months_until_expiration !== null && item.months_until_expiration !== undefined
                 ? item.months_until_expiration + ' meses' : 'N/A';
@@ -1286,6 +1309,7 @@ function displayFarmadeleiteResults(results) {
             codeText = item.barcode || '-';
             priceText = item.price ? 'Bs ' + item.price.toFixed(2) : '-';
             qtyText = (item.quantity || 0) + ' uds (req ' + item.required_qty + ')';
+            drogueriaText = item.drogueria_name || '-';
             supplierText = item.supplier_name || '-';
             expiryText = '-';
             condText = '-';
@@ -1295,6 +1319,7 @@ function displayFarmadeleiteResults(results) {
             codeText = '-';
             priceText = '-';
             qtyText = '0 uds (req ' + item.required_qty + ')';
+            drogueriaText = '-';
             supplierText = '-';
             expiryText = '-';
             condText = '-';
@@ -1304,6 +1329,7 @@ function displayFarmadeleiteResults(results) {
             <tr>
                 <td>${escapeHtml(codeText)}</td>
                 <td>${escapeHtml(item.name)}</td>
+                <td>${escapeHtml(drogueriaText)}</td>
                 <td>${escapeHtml(supplierText)}</td>
                 <td><strong>${priceText}</strong></td>
                 <td>${qtyText}</td>
@@ -1324,7 +1350,7 @@ function displayResults(results) {
     tbody.innerHTML = '';
 
     if (results.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color:var(--gray-400); padding:60px 20px"><div class="empty-state"><h3>No se encontraron resultados</h3><p>Intenta ajustar los filtros de busqueda</p></div></td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:var(--gray-400); padding:60px 20px"><div class="empty-state"><h3>No se encontraron resultados</h3><p>Intenta ajustar los filtros de busqueda</p></div></td></tr>';
         return;
     }
 
@@ -1343,6 +1369,7 @@ function displayResults(results) {
             <tr>
                 <td>${escapeHtml(item.barcode || '-')}</td>
                 <td>${escapeHtml(item.product_name)}</td>
+                <td>${escapeHtml(item.drogueria_name || '-')}</td>
                 <td>${escapeHtml(item.supplier_name)}</td>
                 <td><strong>Bs ${item.price.toFixed(2)}</strong></td>
                 <td>${item.quantity} uds</td>
@@ -1354,7 +1381,7 @@ function displayResults(results) {
     }
 
     if (results.length > MAX_ROWS) {
-        rows.push(`<tr><td colspan="8" style="text-align:center; color:var(--gray-400); padding:20px">Mostrando ${MAX_ROWS} de ${results.length} resultados. Usa los filtros para reducir la lista.</td></tr>`);
+        rows.push(`<tr><td colspan="9" style="text-align:center; color:var(--gray-400); padding:20px">Mostrando ${MAX_ROWS} de ${results.length} resultados. Usa los filtros para reducir la lista.</td></tr>`);
     }
 
     tbody.innerHTML = rows.join('');
@@ -1378,11 +1405,12 @@ function exportResults() {
 
     if (typeof XLSX === 'undefined') { showToast('SheetJS no disponible', 'error'); return; }
 
-    const wsData = [['Codigo', 'Producto', 'Laboratorio', 'Precio', 'Cantidad', 'Vencimiento', 'Condicion', 'Estado']];
+    const wsData = [['Codigo', 'Producto', 'Drogueria', 'Laboratorio', 'Precio', 'Cantidad', 'Vencimiento', 'Condicion', 'Estado']];
     results.forEach(item => {
         wsData.push([
             item.barcode || '-',
             item.product_name,
+            item.drogueria_name || '-',
             item.supplier_name,
             item.price,
             item.quantity,
@@ -1397,7 +1425,7 @@ function exportResults() {
     XLSX.utils.book_append_sheet(wb, ws, 'Resultados');
 
     ws['!cols'] = [
-        { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 12 },
+        { wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 20 }, { wch: 12 },
         { wch: 12 }, { wch: 15 }, { wch: 20 }, { wch: 12 }
     ];
 
@@ -1411,17 +1439,18 @@ function exportFarmadeleiteExcel(results) {
         ['FILTRO FARMADELEITE'],
         ['Fecha: ' + new Date().toLocaleDateString()],
         [],
-        ['#', 'Producto Requerido', 'Laboratorio', 'Codigo', 'Precio', 'Cant. Requerida', 'Stock Disp.', 'Vencimiento', 'Condicion', 'Estado']
+        ['#', 'Producto Requerido', 'Drogueria', 'Laboratorio', 'Codigo', 'Precio', 'Cant. Requerida', 'Stock Disp.', 'Vencimiento', 'Condicion', 'Estado']
     ];
 
     results.forEach((item, i) => {
-        let estado, precio, stock, laboratorio, vencimiento, condicion;
+        let estado, precio, stock, laboratorio, drogueria, vencimiento, condicion;
 
         if (item.reason === 'OK') {
             estado = 'OK';
             precio = item.price;
             stock = item.quantity;
             laboratorio = item.supplier_name;
+            drogueria = item.drogueria_name || '-';
             vencimiento = item.months_until_expiration !== null && item.months_until_expiration !== undefined
                 ? item.months_until_expiration + ' meses' : 'N/A';
             condicion = item.special_conditions || '-';
@@ -1430,6 +1459,7 @@ function exportFarmadeleiteExcel(results) {
             precio = item.price || '-';
             stock = item.quantity || 0;
             laboratorio = item.supplier_name || '-';
+            drogueria = item.drogueria_name || '-';
             vencimiento = '-';
             condicion = '-';
         } else {
@@ -1437,6 +1467,7 @@ function exportFarmadeleiteExcel(results) {
             precio = '-';
             stock = 0;
             laboratorio = '-';
+            drogueria = '-';
             vencimiento = '-';
             condicion = '-';
         }
@@ -1444,6 +1475,7 @@ function exportFarmadeleiteExcel(results) {
         wsData.push([
             i + 1,
             item.name,
+            drogueria,
             laboratorio,
             item.barcode || '-',
             precio,
@@ -1457,7 +1489,7 @@ function exportFarmadeleiteExcel(results) {
 
     const ws = XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols'] = [
-        { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 18 },
+        { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 20 }, { wch: 18 },
         { wch: 12 }, { wch: 16 }, { wch: 14 }, { wch: 16 }, { wch: 22 }, { wch: 30 }
     ];
 
@@ -1488,42 +1520,59 @@ function downloadOrdersExcel(items) {
     if (items.length === 0) { showToast('No hay productos validos para generar ordenes', 'error'); return; }
     if (typeof XLSX === 'undefined') { showToast('SheetJS no disponible', 'error'); return; }
 
-    const bySupplier = {};
+    const droguerias = Store.getDroguerias();
+    const drogueriaMap = new Map();
+    droguerias.forEach(d => drogueriaMap.set(d.id, d.name));
+
+    const byDrogueria = {};
     items.forEach(item => {
-        if (!bySupplier[item.supplier_name]) bySupplier[item.supplier_name] = [];
-        bySupplier[item.supplier_name].push(item);
+        const did = item.drogueria_id || null;
+        const key = did === null
+            ? 'Sin drogueria'
+            : (drogueriaMap.get(did) || ('Drogueria ' + did));
+        if (!byDrogueria[key]) byDrogueria[key] = [];
+        byDrogueria[key].push(item);
     });
 
     const wb = XLSX.utils.book_new();
-    const summaryData = [['Laboratorio', 'Productos', 'Subtotal']];
+    const summaryData = [['Drogueria', 'Productos', 'Subtotal']];
     let grandTotal = 0;
 
-    Object.keys(bySupplier).sort().forEach(supplier => {
-        const supplierItems = bySupplier[supplier];
+    Object.keys(byDrogueria).sort().forEach(drogueriaName => {
+        const drogueriaItems = byDrogueria[drogueriaName];
         const sheetData = [
-            ['Orden de Compra - ' + supplier],
+            ['Orden de Compra - ' + drogueriaName],
             ['Fecha: ' + new Date().toLocaleDateString()],
             [],
-            ['#', 'Codigo Barra', 'Producto', 'Precio Unit.', 'Cantidad', 'Subtotal', 'Condicion']
+            ['#', 'Codigo Barra', 'Producto', 'Laboratorio', 'Precio Unit.', 'Cantidad', 'Subtotal', 'Condicion']
         ];
 
-        let supplierTotal = 0;
-        supplierItems.forEach((item, i) => {
+        let drogueriaTotal = 0;
+        drogueriaItems.forEach((item, i) => {
             const qty = item.required_qty || item.quantity;
             const sub = item.price * qty;
-            supplierTotal += sub;
-            sheetData.push([i + 1, item.barcode || '-', item.product_name || item.name, item.price, qty, sub, item.special_conditions || '-']);
+            drogueriaTotal += sub;
+            sheetData.push([
+                i + 1,
+                item.barcode || '-',
+                item.product_name || item.name,
+                item.supplier_name || '-',
+                item.price,
+                qty,
+                sub,
+                item.special_conditions || '-'
+            ]);
         });
 
         sheetData.push([]);
-        sheetData.push(['', '', 'TOTAL', '', '', supplierTotal]);
+        sheetData.push(['', '', '', '', 'TOTAL', '', drogueriaTotal]);
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
-        ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 40 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 25 }];
-        XLSX.utils.book_append_sheet(wb, ws, supplier.substring(0, 31));
+        ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 40 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 25 }];
+        XLSX.utils.book_append_sheet(wb, ws, drogueriaName.substring(0, 31));
 
-        summaryData.push([supplier, supplierItems.length, supplierTotal]);
-        grandTotal += supplierTotal;
+        summaryData.push([drogueriaName, drogueriaItems.length, drogueriaTotal]);
+        grandTotal += drogueriaTotal;
     });
 
     summaryData.push([]);
@@ -1538,51 +1587,7 @@ function downloadOrdersExcel(items) {
 
 // ----- FILTRO / ORDEN FARMADELEITE -----
 
-const FARMADELEITE_DEFAULT = [
-    { name: "Ketoprofeno amp. IV.", qty: 6, terms: ["ketoprofeno"] },
-    { name: "Lagrioftol gotas", qty: 6, terms: ["lagrioftol"] },
-    { name: "Artrovit x30 tab.", qty: 6, terms: ["artrovit"] },
-    { name: "3crema", qty: 6, terms: ["3crema"] },
-    { name: "Klafenac 100mg", qty: 6, terms: ["klafenac"] },
-    { name: "Diapaglix 10mg", qty: 6, terms: ["diapaglix"] },
-    { name: "Cilostazol 50mg", qty: 6, terms: ["cilostazol"] },
-    { name: "Carbatil 6,25mg", qty: 6, terms: ["carbatil"] },
-    { name: "Metformina 1000mg spefar", qty: 12, terms: ["metformina"] },
-    { name: "Xerograx x30 tab.", qty: 12, terms: ["xerograx"] },
-    { name: "Xerograx x60 tab.", qty: 12, terms: ["xerograx", "x60"] },
-    { name: "Mascarilla ojos Zoah", qty: 12, terms: ["zoah"] },
-    { name: "Escitalopram 10mg x30 tab. Rowe", qty: 12, terms: ["escitalopram", "rowe"] },
-    { name: "Escitalopram 10mg x28 tab. Calox", qty: 12, terms: ["escitalopram", "calox"] },
-    { name: "Solucion 0,9% de 100ml", qty: 12, terms: ["solucion", "0,9"] },
-    { name: "Ferganic 40mg", qty: 12, terms: ["ferganic"] },
-    { name: "Desler M 10 tab. Adulto", qty: 12, terms: ["desler"] },
-    { name: "Atrevia 25mg x20 tab.", qty: 12, terms: ["atrevia"] },
-    { name: "Olmesartan 40mg/Htc 12,5mg x30 tab. Genven", qty: 12, terms: ["olmesartan", "genven"] },
-    { name: "Plidan Compuesto", qty: 3, terms: ["plidan"] },
-    { name: "Dermazol crema", qty: 3, terms: ["dermazol"] },
-    { name: "Dropil 100mg", qty: 3, terms: ["dropil"] },
-    { name: "Breinox 800mg", qty: 3, terms: ["breinox"] },
-    { name: "Valeriana gotas", qty: 3, terms: ["valeriana"] },
-    { name: "Fitex 20mg x2 tab.", qty: 12, terms: ["fitex"] },
-    { name: "Crisomet 50/850 x30", qty: 3, terms: ["crisomet"] },
-    { name: "Espironolactona 25mg MEYER", qty: 3, terms: ["espironolactona"] },
-    { name: "Notalac 30mg", qty: 3, terms: ["notalac"] },
-    { name: "Omeprazol 40mg x10 Genven", qty: 3, terms: ["omeprazol", "genven"] },
-    { name: "Artrodar", qty: 12, terms: ["artrodar"] },
-    { name: "Canfir 750mg", qty: 3, terms: ["canfir"] },
-    { name: "Lubrix 120cc", qty: 3, terms: ["lubrix"] },
-    { name: "Letisan Jarabe", qty: 12, terms: ["letisan"] },
-    { name: "Aceite de coco", qty: 3, terms: ["aceite", "coco"] },
-    { name: "Pedialyte coco", qty: 12, terms: ["pedialyte"] },
-    { name: "Opat gotas", qty: 12, terms: ["opat"] },
-    { name: "Festal x50", qty: 12, terms: ["festal"] },
-    { name: "Festal x20", qty: 3, terms: ["festal", "x20"] },
-    { name: "Dicigel", qty: 3, terms: ["dicigel"] },
-    { name: "Lafarcaina", qty: 3, terms: ["lafarcaina"] },
-    { name: "Aflamax x20 tab.", qty: 3, terms: ["aflamax"] },
-    { name: "Protector solar Dernier Spray 200mL coco", qty: 3, terms: ["dernier"] },
-    { name: "Miovit x30 tab.", qty: 12, terms: ["miovit"] }
-];
+const FARMADELEITE_DEFAULT = [];
 
 function normalizeFarmaTerm(text) {
     return (text || '').toLowerCase().replace(/,/g, '.').replace(/\s+/g, ' ').trim();
@@ -1606,6 +1611,10 @@ function saveFarmadeleiteList(list) {
 // Busca un producto de la lista Farmadeleite entre TODOS los archivos cargados.
 function findFarmaProduct(req, minMonths, ctx, normProducts) {
     const { allProducts, supplierById, pricesByProduct } = ctx || buildIndexes();
+
+    const droguerias = Store.getDroguerias();
+    const drogueriaMap = new Map();
+    droguerias.forEach(d => drogueriaMap.set(d.id, d.name));
 
     if (!normProducts) {
         normProducts = allProducts.map(p => ({ p: p, n: normalizeFarmaTerm(p.name) }));
@@ -1652,6 +1661,11 @@ function findFarmaProduct(req, minMonths, ctx, normProducts) {
                 : null;
             const shelfOk = !price.expiration_date || new Date(price.expiration_date) > cutoffDate;
 
+            const did = price.drogueria_id || null;
+            const drogueriaName = did === null
+                ? 'Sin drogueria'
+                : (drogueriaMap.get(did) || ('Drogueria ' + did));
+
             const offer = {
                 product_id: product.id,
                 barcode: product.barcode,
@@ -1660,7 +1674,9 @@ function findFarmaProduct(req, minMonths, ctx, normProducts) {
                 price: price.price,
                 quantity: price.quantity,
                 months_until_expiration: monthsLeft,
-                special_conditions: price.special_conditions
+                special_conditions: price.special_conditions,
+                drogueria_id: did,
+                drogueria_name: drogueriaName
             };
 
             if (!bestStock || price.quantity > bestStock.quantity) {
@@ -1714,67 +1730,125 @@ function generateFarmadeleiteOrder() {
         else notFound.push(item);
     });
 
-    const wb = XLSX.utils.book_new();
+    const droguerias = Store.getDroguerias();
+    const drogueriaMap = new Map();
+    droguerias.forEach(d => drogueriaMap.set(d.id, d.name));
 
-    const orderData = [
+    const byDrogueria = {};
+    found.forEach(item => {
+        const did = item.drogueria_id || null;
+        const key = did === null
+            ? 'Sin drogueria'
+            : (drogueriaMap.get(did) || ('Drogueria ' + did));
+        if (!byDrogueria[key]) byDrogueria[key] = [];
+        byDrogueria[key].push(item);
+    });
+
+    const wb = XLSX.utils.book_new();
+    let grandTotal = 0;
+    let grandUnits = 0;
+
+    Object.keys(byDrogueria).sort().forEach(drogueriaName => {
+        const items = byDrogueria[drogueriaName];
+        const sheetData = [
+            ['ORDEN DE COMPRA - FARMADELEITE - ' + drogueriaName],
+            ['Fecha: ' + new Date().toLocaleDateString()],
+            [],
+            ['#', 'Producto Requerido', 'Laboratorio', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Stock Disp.', 'Subtotal', 'Condicion']
+        ];
+
+        let drogueriaTotal = 0;
+        let drogueriaUnits = 0;
+
+        items.forEach((item, i) => {
+            const subtotal = item.required_qty * item.price;
+            drogueriaTotal += subtotal;
+            drogueriaUnits += item.required_qty;
+            sheetData.push([
+                i + 1,
+                item.name,
+                item.supplier_name,
+                item.barcode || '-',
+                item.price,
+                item.required_qty,
+                item.quantity,
+                subtotal,
+                item.special_conditions || '-'
+            ]);
+        });
+
+        sheetData.push([]);
+        sheetData.push(['', '', '', '', 'TOTAL', drogueriaUnits, '', drogueriaTotal]);
+
+        const orderWs = XLSX.utils.aoa_to_sheet(sheetData);
+        orderWs['!cols'] = [
+            { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 18 },
+            { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 30 }
+        ];
+        XLSX.utils.book_append_sheet(wb, orderWs, drogueriaName.substring(0, 31));
+
+        grandTotal += drogueriaTotal;
+        grandUnits += drogueriaUnits;
+    });
+
+    if (insufficient.length > 0 || notFound.length > 0) {
+        const missData = [
+            ['FALTANTES - FARMADELEITE'],
+            ['Fecha: ' + new Date().toLocaleDateString()],
+            [],
+            ['#', 'Producto Requerido', 'Laboratorio', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Stock Disp.', 'Estado']
+        ];
+
+        let missIndex = 1;
+        insufficient.forEach(item => {
+            missData.push([
+                missIndex++,
+                item.name,
+                item.supplier_name || '-',
+                item.barcode || '-',
+                item.price || '-',
+                item.required_qty,
+                item.quantity || 0,
+                'STOCK INSUFICIENTE (tiene ' + (item.quantity || 0) + ' de ' + item.required_qty + ')'
+            ]);
+        });
+        notFound.forEach(item => {
+            missData.push([missIndex++, item.name, '-', '-', '-', item.required_qty, 0, 'NO ENCONTRADO']);
+        });
+
+        const missWs = XLSX.utils.aoa_to_sheet(missData);
+        missWs['!cols'] = [
+            { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 18 },
+            { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 30 }
+        ];
+        XLSX.utils.book_append_sheet(wb, missWs, 'Faltantes');
+    }
+
+    const summaryData = [
         ['ORDEN DE COMPRA - FARMADELEITE'],
         ['Fecha: ' + new Date().toLocaleDateString()],
         [],
-        ['#', 'Producto Requerido', 'Laboratorio', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Stock Disp.', 'Subtotal', 'Estado']
+        ['Drogueria', 'Productos', 'Unidades', 'Subtotal']
     ];
-
-    let total = 0;
-    let totalItems = 0;
-
-    found.forEach((item, i) => {
-        const subtotal = item.required_qty * item.price;
-        total += subtotal;
-        totalItems += item.required_qty;
-        orderData.push([
-            i + 1,
-            item.name,
-            item.supplier_name,
-            item.barcode || '-',
-            item.price,
-            item.required_qty,
-            item.quantity,
-            subtotal,
-            item.special_conditions || '-'
-        ]);
+    Object.keys(byDrogueria).sort().forEach(drogueriaName => {
+        const items = byDrogueria[drogueriaName];
+        const sub = items.reduce((acc, it) => acc + it.required_qty * it.price, 0);
+        const units = items.reduce((acc, it) => acc + it.required_qty, 0);
+        summaryData.push([drogueriaName, items.length, units, sub]);
     });
+    summaryData.push([]);
+    summaryData.push(['TOTAL GENERAL', found.length, grandUnits, grandTotal]);
+    summaryData.push(['Stock insuficiente', insufficient.length]);
+    summaryData.push(['No encontrados', notFound.length]);
 
-    insufficient.forEach(item => {
-        orderData.push([
-            '-',
-            item.name,
-            item.supplier_name || '-',
-            item.barcode || '-',
-            item.price || '-',
-            item.required_qty,
-            item.quantity || 0,
-            0,
-            'STOCK INSUFICIENTE (tiene ' + (item.quantity || 0) + ' de ' + item.required_qty + ')'
-        ]);
-    });
-
-    notFound.forEach(item => {
-        orderData.push(['-', item.name, '-', '-', '-', item.required_qty, 0, 0, 'NO ENCONTRADO']);
-    });
-
-    orderData.push([]);
-    orderData.push(['', '', '', '', 'TOTAL', totalItems, '', total]);
-
-    const orderWs = XLSX.utils.aoa_to_sheet(orderData);
-    orderWs['!cols'] = [
-        { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 18 },
-        { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 30 }
-    ];
-    XLSX.utils.book_append_sheet(wb, orderWs, 'Orden Farmadeleite');
+    const summaryWs = XLSX.utils.aoa_to_sheet(summaryData);
+    summaryWs['!cols'] = [{ wch: 30 }, { wch: 12 }, { wch: 12 }, { wch: 15 }];
+    XLSX.utils.book_append_sheet(wb, summaryWs, 'Resumen');
 
     XLSX.writeFile(wb, 'orden_farmadeleite_' + Date.now() + '.xlsx');
 
     showToast(
-        `OK: ${found.length} | Stock insuf.: ${insufficient.length} | No enc.: ${notFound.length} | Total: Bs ${total.toFixed(2)}`,
+        `OK: ${found.length} | Stock insuf.: ${insufficient.length} | No enc.: ${notFound.length} | Total: Bs ${grandTotal.toFixed(2)}`,
         found.length > 0 ? 'success' : 'error'
     );
 }
@@ -1814,17 +1888,6 @@ function initRequirementsHandlers() {
 
     const cancelBtn = document.getElementById('farma-cancel');
     if (cancelBtn) cancelBtn.addEventListener('click', () => { cancelFarmaEdit(); loadRequirements(); });
-
-    const resetBtn = document.getElementById('farma-reset');
-    if (resetBtn) {
-        resetBtn.addEventListener('click', () => {
-            if (!confirm('Restaurar la lista por defecto de productos requeridos?')) return;
-            try { localStorage.removeItem('farmapp_farmadeleite'); } catch (err) { }
-            cancelFarmaEdit();
-            loadRequirements();
-            showToast('Lista restaurada a la version por defecto', 'success');
-        });
-    }
 }
 
 function cancelFarmaEdit() {
