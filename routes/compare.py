@@ -172,7 +172,7 @@ def purchase_orders():
         ws.cell(row=2, column=1, value=f"Fecha: {datetime.now().strftime('%d/%m/%Y')}")
         ws.cell(row=2, column=1).font = Font(color="64748B")
         
-        headers = ["#", "Codigo Barra", "Producto", "Precio Unit.", "Cantidad", "Subtotal", "Condicion"]
+        headers = ["#", "Codigo Barra", "Producto", "Droguería", "Precio Unit.", "Cantidad", "Subtotal", "Condicion"]
         for col, h in enumerate(headers, 1):
             cell = ws.cell(row=4, column=col, value=h)
             cell.font = header_font
@@ -190,25 +190,27 @@ def purchase_orders():
             ws.cell(row=row, column=1, value=i)
             ws.cell(row=row, column=2, value=item.get('barcode', '-'))
             ws.cell(row=row, column=3, value=item['product_name'])
-            ws.cell(row=row, column=4, value=price).number_format = money_format
-            ws.cell(row=row, column=5, value=qty)
-            ws.cell(row=row, column=6, value=subtotal).number_format = money_format
-            ws.cell(row=row, column=7, value=item.get('special_conditions', '-'))
+            ws.cell(row=row, column=4, value=supplier_name)
+            ws.cell(row=row, column=5, value=price).number_format = money_format
+            ws.cell(row=row, column=6, value=qty)
+            ws.cell(row=row, column=7, value=subtotal).number_format = money_format
+            ws.cell(row=row, column=8, value=item.get('special_conditions', '-'))
         
         total_row = 4 + len(items) + 1
         ws.cell(row=total_row, column=3, value="TOTAL").font = total_font
         ws.cell(row=total_row, column=3).fill = total_fill
-        ws.cell(row=total_row, column=6, value=supplier_total).font = total_font
-        ws.cell(row=total_row, column=6).fill = total_fill
-        ws.cell(row=total_row, column=6).number_format = money_format
+        ws.cell(row=total_row, column=7, value=supplier_total).font = total_font
+        ws.cell(row=total_row, column=7).fill = total_fill
+        ws.cell(row=total_row, column=7).number_format = money_format
         
         ws.column_dimensions['A'].width = 5
         ws.column_dimensions['B'].width = 18
         ws.column_dimensions['C'].width = 40
-        ws.column_dimensions['D'].width = 14
-        ws.column_dimensions['E'].width = 12
-        ws.column_dimensions['F'].width = 14
-        ws.column_dimensions['G'].width = 25
+        ws.column_dimensions['D'].width = 25
+        ws.column_dimensions['E'].width = 14
+        ws.column_dimensions['F'].width = 12
+        ws.column_dimensions['G'].width = 14
+        ws.column_dimensions['H'].width = 25
         
         summary_ws.cell(row=summary_row, column=1, value=supplier_name)
         summary_ws.cell(row=summary_row, column=2, value=len(items))

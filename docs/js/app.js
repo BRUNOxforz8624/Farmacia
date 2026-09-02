@@ -1544,7 +1544,7 @@ function downloadOrdersExcel(items) {
             ['Orden de Compra - ' + drogueriaName],
             ['Fecha: ' + new Date().toLocaleDateString()],
             [],
-            ['#', 'Codigo Barra', 'Producto', 'Laboratorio', 'Precio Unit.', 'Cantidad', 'Subtotal', 'Condicion']
+            ['#', 'Codigo Barra', 'Producto', 'Laboratorio', 'Droguería', 'Precio Unit.', 'Cantidad', 'Subtotal', 'Condicion']
         ];
 
         let drogueriaTotal = 0;
@@ -1557,6 +1557,7 @@ function downloadOrdersExcel(items) {
                 item.barcode || '-',
                 item.product_name || item.name,
                 item.supplier_name || '-',
+                drogueriaName,
                 item.price,
                 qty,
                 sub,
@@ -1565,10 +1566,10 @@ function downloadOrdersExcel(items) {
         });
 
         sheetData.push([]);
-        sheetData.push(['', '', '', '', 'TOTAL', '', drogueriaTotal]);
+        sheetData.push(['', '', '', '', '', 'TOTAL', '', drogueriaTotal]);
 
         const ws = XLSX.utils.aoa_to_sheet(sheetData);
-        ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 40 }, { wch: 20 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 25 }];
+        ws['!cols'] = [{ wch: 5 }, { wch: 18 }, { wch: 40 }, { wch: 20 }, { wch: 25 }, { wch: 14 }, { wch: 12 }, { wch: 14 }, { wch: 25 }];
         XLSX.utils.book_append_sheet(wb, ws, drogueriaName.substring(0, 31));
 
         summaryData.push([drogueriaName, drogueriaItems.length, drogueriaTotal]);
@@ -1754,7 +1755,7 @@ function generateFarmadeleiteOrder() {
             ['ORDEN DE COMPRA - FARMADELEITE - ' + drogueriaName],
             ['Fecha: ' + new Date().toLocaleDateString()],
             [],
-            ['#', 'Producto Requerido', 'Laboratorio', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Stock Disp.', 'Subtotal', 'Condicion']
+            ['#', 'Producto Requerido', 'Laboratorio', 'Droguería', 'Codigo', 'Precio Unit.', 'Cant. Requerida', 'Stock Disp.', 'Subtotal', 'Condicion']
         ];
 
         let drogueriaTotal = 0;
@@ -1768,6 +1769,7 @@ function generateFarmadeleiteOrder() {
                 i + 1,
                 item.name,
                 item.supplier_name,
+                drogueriaName,
                 item.barcode || '-',
                 item.price,
                 item.required_qty,
@@ -1778,11 +1780,11 @@ function generateFarmadeleiteOrder() {
         });
 
         sheetData.push([]);
-        sheetData.push(['', '', '', '', 'TOTAL', drogueriaUnits, '', drogueriaTotal]);
+        sheetData.push(['', '', '', '', '', 'TOTAL', drogueriaUnits, '', drogueriaTotal]);
 
         const orderWs = XLSX.utils.aoa_to_sheet(sheetData);
         orderWs['!cols'] = [
-            { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 18 },
+            { wch: 5 }, { wch: 40 }, { wch: 20 }, { wch: 25 }, { wch: 18 },
             { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 30 }
         ];
         XLSX.utils.book_append_sheet(wb, orderWs, drogueriaName.substring(0, 31));
